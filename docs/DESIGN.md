@@ -1,6 +1,6 @@
-# Course Waitlist – Design Specification (v1.3)
+# Course Waitlist – Design Specification (v1.4)
 
-> **Status: v1.3 DRAFT – under review, not yet implemented.** The code still implements v1.0.
+> **Status: v1.4 DRAFT – under review, not yet implemented.** The code still implements v1.0.
 >
 > Changes from v1.0:
 > - **v1.1 – A5:** dropped learners may re-enroll through the normal flow (was: blocked). New
@@ -17,6 +17,8 @@
 >     is a safeguard.
 >   - Added acceptance-criteria traceability (§11), scope compliance (§12), test plan (§13)
 >     and limitations (§14).
+> - **v1.4:** O2 resolved. "Enroll only once" = no duplicate active records (candidate decision);
+>   §2.1 rewritten as explicit rules; the rejected "once ever" reading added to §10.
 
 ## 1. Scope
 One course offering. Operations: **enroll**, **drop** (enrolled learner), **leave waitlist**
@@ -40,12 +42,18 @@ persistence/database, identity, payments, multi-term, configurable policy engine
 | A9 | `drop` vs `leave_waitlist` | Separate operations. `drop` on a waitlisted learner returns `NOT_ENROLLED` with a hint, instead of guessing intent. | Design choice |
 | A10 | Learner identity | Learner IDs must be non-empty strings known to the `LearnerDirectory`; anything else is `INVALID_REQUEST`. | Design choice |
 
-### 2.1 Interpretation of "a learner may enroll only once"
-A learner has **at most one active record** (`ENROLLED` or `WAITLISTED`) at any time. A second
-enroll while active returns `ALREADY_ENROLLED` / `ALREADY_WAITLISTED` and changes nothing.
-A learner who **dropped** an enrolled seat (`DROPPED`) or **withdrew** from the waitlist
-(`WITHDRAWN`) is no longer active, and may enroll again through exactly the same flow as a
-first-time learner (§2.2). No state permanently blocks re-enrollment.
+### 2.1 Interpretation of "a learner may enroll only once" (decided)
+The statement prohibits **duplicate records**, not re-enrollment. Concretely:
+
+| Rule | Meaning |
+|------|---------|
+| R1 | A learner who is `ENROLLED` is never also `WAITLISTED`. |
+| R2 | A learner who is `WAITLISTED` is never also `ENROLLED`. |
+| R3 | While a learner is `ENROLLED` or `WAITLISTED` (active), any new enroll request is rejected (`ALREADY_ENROLLED` / `ALREADY_WAITLISTED`) and changes nothing. |
+| R4 | A learner who **dropped** an enrolled seat (`DROPPED`) or **withdrew** from the waitlist (`WITHDRAWN`) is no longer active, and **may enroll again** through the same flow as a first-time learner (§2.2). |
+
+R1–R3 are guaranteed by storing exactly one status per learner (§6), and are asserted by
+invariants 2 and 6. No state permanently blocks re-enrollment.
 
 ### 2.2 Eligibility (prerequisite) check points
 The prerequisite is checked at **every** point where a learner gains a place:
@@ -185,6 +193,7 @@ All triggers run inside the same lock as the operation that causes them.
 |--------|-------------|-----|
 | Skip and **retain** | Skip and remove | Fair to learners whose ineligibility is temporary (e.g. a record correction); follows the spec's "earliest eligible" wording without inventing a penalty; removes a terminal state. **Cost:** ineligible learners can wait indefinitely, so the waitlist length overstates real demand; each promotion scans past them (O(n) in waitlist length); extra trigger rules are needed (§8.2). |
 | Promotion before seating a newcomer + `promote_waitlist()` | Promote only on drop | Without these, a newcomer could take a free seat ahead of a waiting learner who has regained eligibility. Remaining gap: a seat can stay empty until the next trigger, if nothing calls `promote_waitlist()`. |
+| "Enroll only once" = no duplicate active records; re-enroll after drop/withdraw allowed | "Once ever": block any learner who has ever enrolled | AC 2 makes the requirement testable as "duplicate enrollment requests do not create duplicate records", and no AC forbids re-enrolling after a drop. Re-enrollment can't jump the queue: a dropped seat is offered to the waitlist first, and a re-enrolling learner joins the back if the course is full. **Cost:** a reviewer may hold the stricter reading; this is mitigated by documenting the rules explicitly (§2.1). |
 | Return result values | Raise exceptions | Duplicate and invalid requests are expected traffic; callers branch on an enum. |
 | Coarse per-offering lock | Fine-grained or optimistic locking | One offering, small critical sections; correctness first. |
 
@@ -203,7 +212,7 @@ Problem-statement checks:
 
 | Statement | Design |
 |-----------|--------|
-| "A learner may enroll only once." | Interpreted as one active record at a time (§2.1). **Risk:** a stricter "once ever" reading exists; see O2. |
+| "A learner may enroll only once." | No duplicate active records: rules R1–R4 (§2.1). Consistent with AC 2 ("duplicate enrollment requests do not create duplicate records"). The stricter "once ever" reading was considered and rejected (§10). |
 | "When the course is full, eligible learners join the waitlist." | C2 |
 | "If a seat opens, promote the earliest eligible learner." | §8.1, word for word |
 | "Define whether an ineligible learner is skipped or remains waiting, and apply that policy consistently." | A3: skipped *and* remains waiting at the same position; one routine (§8) |
@@ -249,7 +258,7 @@ Problem-statement checks:
   `promote_waitlist()` call. Nothing calls it automatically when records change.
 - **No history.** Only the current status is stored, so after drop → re-enroll there's no record
   of the earlier enrollment, and skips are reported in the `Result` but not stored.
-- **"Enroll only once" interpretation risk.** See §2.1 and O2.
+- **"Enroll only once" interpretation.** The decided reading (§2.1) allows re-enrollment after a drop or withdrawal; a reviewer holding the "once ever" reading would see this differently (§10).
 - **No notifications** to promoted or skipped learners, and **no admin operations** (capacity
   change, force-enroll).
 - **Concurrency tests are probabilistic.** They rely on a widened race window.
@@ -259,6 +268,6 @@ Problem-statement checks:
 | # | Question | Proposed |
 |---|----------|----------|
 | O1 | Should a failed prerequisite check at enroll be **stored** as a `REJECTED` state (audit), or only returned as `PREREQUISITE_NOT_MET`? | Return only (current A2) |
-| O2 | Add "enroll once *ever*" to §10 as the rejected alternative to §2.1, with the AC 2 reasoning; list "no history of earlier enrollments after drop → re-enroll" as a limitation. | Add both |
+| O2 | ~~Interpretation of "enroll only once"~~ | **Resolved (v1.4):** no duplicate active records, R1–R4 in §2.1; "once ever" recorded as the rejected alternative in §10; the no-history limitation is in §14. |
 | O3 | Keep `promote_waitlist()` as a public operation? | Yes |
 | O4 | Should retained ineligible learners ever expire from the waitlist (e.g. after being skipped N times)? | No; document as a limitation |
