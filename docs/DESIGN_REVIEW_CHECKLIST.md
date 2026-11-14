@@ -1,139 +1,116 @@
-# Design Review Checklist
+# Design Review Checklist (final, v1.9)
 
-How to use: for each item, tick **one** box (`[x]`). The current design is pre-ticked.
-To propose something else, tick **Other** and describe it in the "Notes" line.
-When done, tell Claude "checklist updated" and the design, code, tests and docs will be
-redesigned to match.
+This checklist was used to review each design decision with the candidate. Every item is
+settled; ticked boxes show the decision implemented in v1.9. The full reasoning for each change
+is in `docs/AI_USAGE.md` (Interactions 5–14).
 
-Status legend for the Decision line: `APPROVED` / `CHANGED` / `NEEDS DISCUSSION`
+Decision legend: `APPROVED` (kept as proposed) / `CHANGED` (candidate chose something else) /
+`NOT APPLICABLE`.
 
 ---
 
 ## A. Policy decisions
 
 ### A1 – Prerequisite rule
-- [x] One prerequisite course ID; the learner must have completed it *(current)*
-- [ ] Several prerequisite course IDs; the learner must have completed **all** of them
-- [ ] Several course IDs; completing **any one** is enough
-- [ ] Other
-- Notes:
-- Decision:
+- [x] One prerequisite course ID; the learner must have completed it
+- [ ] Several prerequisite course IDs; all required
+- [ ] Several course IDs; any one is enough
+- Decision: CHANGED from the AI's first proposal (a set of courses) to a single course ID
 
 ### A2 – Ineligible learner at enroll time
-- [ ] Rejected (`PREREQUISITE_NOT_MET`); nothing recorded; may retry later *(previous)*
-- [ ] Rejected and recorded, so repeat attempts are blocked
-- [x] Other: return the `REJECTED` outcome and message; **nothing stored**; the learner may try again at any time *(current, v1.7)*
-- Notes: v1.5 stored a REJECTED status; removed in v1.7 because re-enrollment is allowed and eligibility is re-checked on every attempt.
-- Decision: CHANGED (outcome renamed from PREREQUISITE_NOT_MET to REJECTED; still stateless)
+- [x] Return `REJECTED` with a message; **nothing stored**; the learner may try again at any time
+- [ ] Return `REJECTED` and store a `REJECTED` status *(tried in v1.5; removed in v1.7)*
+- Decision: CHANGED (v1.7): a stored status adds nothing, because re-enrollment is allowed and eligibility is re-checked
 
-### A3 – Learner at the front of the waitlist is no longer eligible when a seat opens
-- [ ] Skip and **remove**: status `REMOVED`, audit record kept, next learner checked *(previous)*
-- [x] Skip but **keep place**: stays waiting at the same position; skipped each time until eligible again *(current, v1.2)*
-- [ ] Other
-- Notes: Losing eligibility while waiting shouldn't cost the learner their place. Eligibility is still re-checked at promotion (AC 3 and AC 4), so they are not promoted while ineligible.
-- Decision: CHANGED
+### A3 – Learner at the front of the waitlist is not eligible when a seat opens
+- [ ] Skip and **remove** *(v1.0)*
+- [x] Skip and **retain**: same FIFO position, re-checked at every later promotion
+- Decision: CHANGED (v1.2): losing eligibility while waiting must not cost the learner their place
 
-### A4 – REMOVED learner tries to enroll again
-- [ ] Blocked permanently (`PREVIOUSLY_REMOVED`) *(previous)*
-- [ ] Allowed if now eligible; joins the back of the queue
-- [ ] Other
-- Notes: The REMOVED state no longer exists after A3 changed to skip and retain.
-- Decision: NOT APPLICABLE (v1.2)
+### A4 – Removed learner tries to enroll again
+- Decision: NOT APPLICABLE (v1.2): nobody is removed from the waitlist any more
 
-### A5 – Enrolled learner who DROPPED tries to enroll again
-- [ ] Blocked (`PREVIOUSLY_DROPPED`) *(previous)*
-- [x] Allowed; prerequisite re-checked, seat if free, otherwise back of the waitlist *(current, v1.1)*
-- [ ] Other
-- Notes: "Enroll only once" means one active record (enrolled or waitlisted), not once ever.
-- Decision: CHANGED
+### A5 – Enrolled learner who dropped tries to enroll again
+- [ ] Blocked *(v1.0)*
+- [x] Allowed through the normal flow (prerequisite check → seat or back of the queue)
+- Decision: CHANGED (v1.1): "enroll only once" means no duplicate active records (R1–R4)
 
-### A6 – Waitlisted learner leaves the waitlist (WITHDRAWN) and re-enrolls
-- [x] Allowed; joins the **back** of the queue (or gets a seat directly if one is free) *(current)*
-- [ ] Allowed; **original position restored**
+### A6 – Waitlisted learner leaves the waitlist and re-enrolls
+- [x] Allowed; joins the back of the queue, or gets a seat if one is free
+- [ ] Original position restored
 - [ ] Not allowed
-- [ ] Other
-- Notes:
-- Decision:
+- Decision: APPROVED
 
 ### A7 – Enrolled learner's prerequisite is revoked after enrolling
-- [x] Keeps the seat; eligibility is checked only at enroll and promotion *(current)*
-- [ ] Automatically dropped, and the next eligible learner is promoted
-- [ ] Other
-- Notes:
-- Decision:
+- [x] Keeps the seat: **eligibility is never checked for already-enrolled learners**
+- [ ] Automatically dropped and the next eligible learner promoted
+- Decision: APPROVED and explicitly confirmed (v1.9); AC 4 applies when a learner gains a place
 
 ### A8 – Waitlist size
-- [x] Unlimited *(current)*
-- [ ] Fixed maximum (state the number in Notes); enroll returns `WAITLIST_FULL` when reached
-- [ ] Other
-- Notes:
-- Decision:
+- [x] Unlimited
+- [ ] Fixed maximum
+- Decision: APPROVED
 
 ### A9 – Drop vs. leave waitlist
-- [x] Separate operations: `drop` (enrolled only) and `leave_waitlist` *(current)*
-- [ ] One `drop` operation that handles both, returning `DROPPED` or `WITHDRAWN`
-- [ ] Other
-- Notes:
-- Decision:
+- [x] Separate operations: `drop` (enrolled only) and `leave_waitlist`
+- [ ] One `drop` that handles both
+- Decision: APPROVED
 
 ### A10 – Invalid requests
-- [x] Blank or non-string ID, or a learner unknown to the directory → `INVALID_REQUEST`, no state change *(current)*
-- [ ] Unknown learners are auto-registered with no completed courses
-- [ ] Other
-- Notes:
-- Decision:
+- [x] Blank or non-string ID, or an unknown learner → `INVALID_REQUEST`; no state change
+- [ ] Unknown learners auto-registered
+- Decision: APPROVED
+
+### A11 – Prerequisite data stability *(added v1.6)*
+- [x] Records are assumed stable during normal operation; the promotion-time check is a safeguard; no reaction to record changes
+- [ ] Event-driven promotion when records change *(tried in v1.5; removed in v1.6)*
+- Decision: CHANGED (v1.6)
+
+### R1–R4 – "A learner may enroll only once" *(added v1.4)*
+- [x] No duplicate active records: never enrolled *and* waitlisted; duplicate requests rejected while active; re-enroll allowed after drop or withdraw
+- [ ] "Once ever"
+- Decision: CHANGED (v1.4), candidate's interpretation
+
+### Eligibility check points *(added v1.3, confirmed v1.9)*
+- [x] Only at new enrollment, moving to the waitlist, and promotion; never for enrolled learners, duplicates, drops or withdrawals
+- Decision: APPROVED
 
 ---
 
 ## B. Design and implementation choices
 
 ### B1 – How results are reported
-- [x] Every operation returns a `Result` with an `Outcome` enum; no exceptions for business cases *(current)*
-- [ ] Raise typed exceptions for rejections (e.g. `AlreadyEnrolledError`)
-- [ ] Other
-- Notes:
-- Decision:
+- [x] `Result` with an `Outcome` enum; no exceptions for business cases
+- [ ] Typed exceptions
+- Decision: APPROVED
 
-### B2 – Promotion scope
-- [ ] Only the learner at the front is checked; ineligible ones removed *(previous)*
-- [x] Scan the waitlist in order and promote the first eligible learner(s); ineligible learners stay in place. Promotion also runs before a newcomer is seated, and via `promote_waitlist()` *(current, v1.2)*
-- [ ] On each promotion, sweep the **whole** waitlist and remove every ineligible learner
-- [ ] Other
-- Notes:
-- Decision:
+### B2 – Promotion
+- [ ] Only the head is checked; ineligible learners removed *(v1.0)*
+- [ ] Also triggered by record changes or a public `promote_waitlist()` *(v1.2–v1.5; removed)*
+- [x] One FIFO pass that seats the first eligible learners and skips (retains) ineligible ones. Triggered automatically after a drop (P1) and before seating a newcomer (P2)
+- Decision: CHANGED (final form in v1.6)
+
+### B2a – Seat priority *(added v1.8)*
+- [x] SP1: eligible waitlisted learners always come before new requests
+- [x] SP2: retained ineligible learners never block an eligible newcomer from a vacant seat
+- Decision: APPROVED (candidate's rules)
 
 ### B3 – Concurrency
-- [x] One lock per offering around every operation; concurrency tests with a widened race window *(current)*
-- [ ] No locking (single-threaded use only); drop the concurrency tests
-- [ ] Other
-- Notes:
-- Decision:
+- [x] One `threading.Lock` per offering around every operation; concurrency tests with widened race windows
+- [ ] No locking
+- Decision: APPROVED
 
 ### B4 – Persistence
-- [x] In-memory only *(current; matches the assessment's scope)*
-- [ ] Add a JSON-file or SQLite store
-- [ ] Other
-- Notes:
-- Decision:
+- [x] In-memory only (matches the assessment's scope)
+- [ ] JSON file or SQLite
+- Decision: APPROVED
 
 ### B5 – Demo CLI
-- [x] Keep the small line-based CLI plus `examples/demo.txt` *(current)*
-- [ ] Remove it; library and tests only
-- [ ] Replace it with a minimal HTTP API (note: the assessment says no frontend)
-- [ ] Other
-- Notes:
-- Decision:
+- [x] Keep the small line-based CLI plus `examples/demo.txt`
+- [ ] Remove it
+- Decision: APPROVED
 
 ### B6 – Audit trail
-- [x] No stored audit; each `Result` reports `promoted` and `skipped` learners *(current, v1.2; RemovalRecord deleted)*
-- [ ] Record every state change (enroll, waitlist, drop, withdraw, promote, remove) in an event log
-- [ ] Other
-- Notes:
-- Decision:
-
----
-
-## C. Anything else
-Add any further changes, questions or concerns here:
-
--
+- [x] No stored audit; each `Result` reports `promoted` and `skipped` learners
+- [ ] Event log of every state change
+- Decision: APPROVED (no history is listed as a limitation)
