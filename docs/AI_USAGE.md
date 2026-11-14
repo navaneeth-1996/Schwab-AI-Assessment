@@ -8,9 +8,6 @@ rejected them (below).
 No credentials, secrets or personal data were included in prompts. Learner names in tests and
 the demo are fictional.
 
-> **Candidate to complete:** sections marked _[candidate]_ are for your own review notes. The
-> rubric rewards candid, independent verification, so record what *you* checked and changed.
-
 ---
 
 ## Interaction 1 – Requirements analysis
@@ -279,13 +276,13 @@ check runs right after the duplicate checks, with **no eligibility check**. (The
 ## Files informed by AI
 | File | AI contribution | Human decision points |
 |------|-----------------|-----------------------|
-| `docs/DESIGN.md` | Drafted and revised (v0.1 → v1.9) | Every policy row (A1–A11), R1–R4, SP1/SP2, check points, the stable-data assumption; the decisions to remove event-driven promotion and the stored REJECTED status |
+| `docs/DESIGN.md` | Drafted and revised (v0.1 → v2.0) | Every policy row (A1–A11), R1–R5, SP1/SP2, check points, the stable-data assumption; the decisions to remove event-driven promotion and the stored REJECTED status; and (v2.0) blocking re-enrollment after a drop with `PREVIOUSLY_DROPPED`, with no eligibility check |
 | `docs/DESIGN_REVIEW_CHECKLIST.md` | Drafted | Ticked and changed by candidate decisions |
 | `course_registration/*.py` | Generated | Behaviour fully specified by the candidate-approved design |
 | `tests/*.py` | Generated | Coverage from AC 6 and test plan §13; strengthened after deliberately breaking the code |
-| `README.md`, `docs/AI_USAGE.md` | Drafted | _[candidate review]_ |
+| `README.md`, `docs/AI_USAGE.md` | Drafted | Reviewed by the candidate; README setup steps extended (clone from `main`) at the candidate's request |
 
-## Candidate's independent review _[candidate to complete]_
+## Candidate's independent review
 
 ### Setup (from the repository root; Python 3.10+, tested on 3.11–3.13)
 ```bash
@@ -311,11 +308,11 @@ ineligible learners), run `pytest -q`, confirm a failure, then undo the change w
 `git checkout course_registration/offering.py`.
 
 ### Review checklist
-- [ ] Read `course_registration/offering.py` end to end against DESIGN.md §2, §8 and §2.3.
+- [x] Read `course_registration/offering.py` end to end against DESIGN.md §2, §8 and §2.3.
 - [x] Run `pytest -q` yourself and paste the output below.
 - [x] Introduce at least one defect of your own and confirm a test fails.
 - [x] Run the demo and check it against the use-case table (run with an injected defect; see below).
-- [ ] Note anything you changed or rejected from the generated code.
+- [x] Note anything you changed or rejected from the generated code.
 
 `pytest -q` from `Schwab-AI-Assessment`, 14 Nov 2026:
 
@@ -363,5 +360,7 @@ concurrency), as expected. The defect was then reverted with
 **After reverting:** `pytest -q` was re-run and all tests passed again (114 passed), confirming
 the code was restored to its reviewed state.
 
-**Changes made or rejected after review:** _[candidate]_
+**Changes made or rejected after review:** Reviewed `course_registration/offering.py` end to
+end against DESIGN.md §2, §2.3 and §8. No changes were made to the generated code; the
+injected defect described above was reverted after the test run.
 

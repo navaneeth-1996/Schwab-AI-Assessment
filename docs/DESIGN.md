@@ -272,7 +272,7 @@ waiting learner was ineligible at the last promotion (invariant 3). So "eligible
 | 4 | An ineligible learner is not enrolled or promoted; the skip/retain policy is applied **consistently** | C1/C2 → `REJECTED`; C3 → skip and retain. A single promotion routine serves P1 and P2, so the policy is identical everywhere. AC 4 is applied at the moments a learner **gains a place** (new enrollment, moving to the waitlist, promotion). Already-enrolled learners are not re-evaluated (A7, A11; UC4) | §2.2, §2.3, A2, A3, A7, §8 |
 | 5 | Invalid requests and duplicate drops return clear results without corrupting enrollment, capacity or waitlist | `INVALID_REQUEST`, `ALREADY_DROPPED`, `NOT_ENROLLED`, `NOT_WAITLISTED`; no rejection touches seats or the waitlist | §5, inv. 5 |
 | 6 | Tests for capacity available/full, duplicates, FIFO promotion, prerequisite failure, invalid/repeated drops; concurrency where practical | Test plan T1–T13 | §13 |
-| 7 | Record AI prompts, responses, accept/edit/reject decisions, verification | `docs/AI_USAGE.md` (to be updated with the v1.1–v1.9 design decisions during development) | — |
+| 7 | Record AI prompts, responses, accept/edit/reject decisions, verification | `docs/AI_USAGE.md`: the complete record (v0.1 → v2.0 decisions, implementation evidence and the candidate's independent review) | — |
 
 | Problem statement | Design |
 |-------------------|--------|
