@@ -1,4 +1,4 @@
-"""Enrollment, drop, and FIFO waitlist promotion for one course offering (DESIGN.md v1.9)."""
+"""Enrollment, drop, and FIFO waitlist promotion for one course offering (DESIGN.md v2.0)."""
 
 from __future__ import annotations
 
@@ -20,9 +20,11 @@ class CourseOffering:
     Policy summary (see docs/DESIGN.md for the full rules):
       * Eligible  <=>  the learner has completed ``prerequisite_course_id`` (A1).
       * Eligibility is checked ONLY at: new enrollment, moving to the waitlist, and promotion
-        (§2.2). Never for already-enrolled learners, duplicates, drops or withdrawals (A7).
-      * "Enroll only once" = at most one active record (ENROLLED or WAITLISTED) per learner.
-        DROPPED and WITHDRAWN learners may enroll again through the normal flow (§2.1).
+        (§2.2). Never for already-enrolled learners, duplicates, previously dropped learners,
+        drops or withdrawals (A7, R3, R4).
+      * "Enroll only once" (§2.1): no duplicate records, and a seat may be held at most once.
+        A DROPPED learner gets PREVIOUSLY_DROPPED (R4); a WITHDRAWN learner never held a seat
+        and may enroll again through the normal flow (R5).
       * A failed prerequisite check returns REJECTED and stores nothing (A2).
       * Promotion is FIFO over the waitlist. An ineligible learner is skipped and RETAINED at
         the same position (A3). Promotion runs after every drop (P1) and before an eligible
@@ -71,8 +73,8 @@ class CourseOffering:
                 return invalid
             assert isinstance(learner_id, str)
 
-            # R3: the duplicate check runs before the prerequisite check, so an active learner
-            # always gets the duplicate result and is never re-evaluated for eligibility.
+            # R3 then R4, both before the prerequisite check: active and previously dropped
+            # learners are never evaluated for eligibility.
             status = self._status.get(learner_id)
             if status is LearnerStatus.ENROLLED:
                 return Result(Outcome.ALREADY_ENROLLED, learner_id, "Learner is already enrolled.")
@@ -81,6 +83,13 @@ class CourseOffering:
                     Outcome.ALREADY_WAITLISTED,
                     learner_id,
                     f"Learner is already waitlisted (position {self._position(learner_id)}).",
+                )
+
+            if status is LearnerStatus.DROPPED:
+                return Result(
+                    Outcome.PREVIOUSLY_DROPPED,
+                    learner_id,
+                    "Learner dropped this course and cannot enroll again.",
                 )
 
             # C1 / C2: one eligibility check, before the seat-or-waitlist decision.

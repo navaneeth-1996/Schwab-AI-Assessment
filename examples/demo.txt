@@ -24,8 +24,9 @@ complete ben CS101
 drop cara
 show
 
-# amy dropped earlier; she may enroll again (back of the queue)
+# amy dropped earlier: a seat can be held only once, so she cannot enroll again
 enroll amy
+# dan leaves the waitlist; he never held a seat, so he may re-join (at the back)
 leave dan
 enroll dan
 drop amy

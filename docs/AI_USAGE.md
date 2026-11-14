@@ -236,6 +236,46 @@ assessment states itself: correct capacity and queue behaviour, focused tests, u
 changes, evidence of independent review, and candour about AI use. No rubric-based self-score
 is claimed.
 
+## Interaction 17 – Re-examining "enroll only once" (design v2.0)
+**Prompt (summary):** The candidate asked whether "a learner may enroll only once" requires a
+change, given that both withdrawn and dropped learners could re-enroll. They asked to discuss
+first and change nothing until a conclusion was reached.
+
+**AI response (summary):**
+- Argued that the two cases differ:
+  - a **withdrawn** learner never enrolled, so re-joining doesn't break even a strict reading;
+  - a **dropped** learner has already enrolled once, so re-enrolling is exactly what a literal
+    reading forbids.
+- **Candidly noted that the plain wording leans stricter than the v1.4–v1.9 interpretation the
+  AI had helped justify.**
+- Offered three options:
+  - A: keep the current rule;
+  - B: block dropped learners, allow withdrawn ones;
+  - C: block both.
+- Gave use cases and recommended **B**: it satisfies both AC 2 and the literal sentence, and
+  doesn't penalise learners who never held a seat. It is also the candidate's original v1.0
+  distinction.
+
+**Candidate decision:** **Option B**, with outcome `PREVIOUSLY_DROPPED`. The previously-dropped
+check runs right after the duplicate checks, with **no eligibility check**. (The AI had offered
+`ALREADY_DROPPED` as an alternative; the candidate chose the distinct outcome.)
+
+**Changes:**
+- Design v2.0: A5, §2.1 rules R1–R5, use cases UC12/UC12b, state table, outcomes, invariants 5–6,
+  tradeoffs, traceability, T9, limitations, O2.
+- `Outcome.PREVIOUSLY_DROPPED`; one check in `enroll`.
+- Five T9 tests replaced. One new test spies on the directory to prove that no eligibility lookup
+  happens for a dropped learner. The random-sequence test asserts R4 on every step.
+- Demo, README and checklist updated.
+
+**Verification:**
+- Before the test changes, exactly the 6 tests that encoded the old rule failed, and nothing else.
+- After: `114 passed` in 5/5 runs.
+- Deliberately broke the new rule 3 ways (all caught):
+  - dropped learner allowed to re-enroll;
+  - eligibility checked before the dropped check;
+  - withdrawn learners blocked too.
+
 ## Files informed by AI
 | File | AI contribution | Human decision points |
 |------|-----------------|-----------------------|

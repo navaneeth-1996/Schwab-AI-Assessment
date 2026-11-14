@@ -14,6 +14,7 @@ def test_demo_script_runs_end_to_end():
     assert "REJECTED: Rejected: prerequisite CS101 not completed." in text
     assert "DROPPED: Dropped. | promoted: cara | skipped (ineligible, retained): ben" in text
     assert "DROPPED: Dropped. | promoted: ben" in text
+    assert "PREVIOUSLY_DROPPED: Learner dropped this course and cannot enroll again." in text
     s = o.snapshot()
     assert s.enrolled == ("ben",)
-    assert s.waitlist == ("amy", "dan")
+    assert s.waitlist == ("dan",)

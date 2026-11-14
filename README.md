@@ -7,7 +7,7 @@ A bounded service for **one course offering**:
 - automatic first-in-first-out promotion from the waitlist.
 
 In-memory, Python standard library only; pytest for tests. Implements
-[`docs/DESIGN.md`](docs/DESIGN.md) **v1.9**.
+[`docs/DESIGN.md`](docs/DESIGN.md) **v2.0**.
 
 | Doc | Contents |
 |-----|----------|
@@ -21,9 +21,11 @@ In-memory, Python standard library only; pytest for tests. Implements
   re-checked for an already-enrolled learner.
 - **Rejected:** a learner without the prerequisite gets `REJECTED`. Nothing is stored, and they
   can try again at any time.
-- **Enroll only once:** a learner has at most one active record (enrolled *or* waitlisted).
-  Duplicate requests get `ALREADY_ENROLLED` / `ALREADY_WAITLISTED`. Learners who **drop** or
-  **leave the waitlist** may enroll again through the normal flow.
+- **Enroll only once:** a learner never has duplicate records, and may hold a seat only once.
+  - Duplicate requests get `ALREADY_ENROLLED` / `ALREADY_WAITLISTED`.
+  - A learner who **dropped** an enrolled seat gets `PREVIOUSLY_DROPPED`, with no eligibility check.
+  - A learner who **left the waitlist** never held a seat, so they may enroll again through the
+    normal flow.
 - **Promotion:** runs after every drop, and before a newcomer is seated.
   - It scans the waitlist from the front and seats the first eligible learners.
   - A learner who has become ineligible while waiting is **skipped and keeps their position**,
@@ -58,7 +60,8 @@ The demo shows:
 - waitlisting and a duplicate request;
 - a learner whose record is revoked while waiting being skipped but keeping position 1;
 - that learner getting the next seat once their record is corrected;
-- re-enrolling after a drop and after leaving the waitlist.
+- a dropped learner refused with `PREVIOUSLY_DROPPED`;
+- a withdrawn learner re-joining at the back of the waitlist.
 
 Interactive: `python -m course_registration.cli --capacity 2`, then type commands such as
 `learner amy CS101`, `enroll amy`, `drop amy`, `leave amy`, `revoke amy CS101`,
@@ -87,7 +90,7 @@ tests/
   test_enrollment.py             T1–T4: free seat, full course, duplicates, rejection, A7
   test_promotion.py              T5–T7, T10, T12: FIFO, skip-and-retain, drops, non-triggers
   test_seat_priority.py          T8, T8b: SP1 / SP2
-  test_reenrollment.py           T9: re-enroll after drop / withdraw
+  test_reenrollment.py           T9: dropped learners blocked; withdrawn learners may re-join
   test_invalid_requests.py       T11: malformed or unknown IDs, bad configuration
   test_concurrency.py            T13: parallel enroll/drop/leave_waitlist with widened race windows
   test_randomized_invariants.py  T13: 30 seeded random sequences, invariants after every step

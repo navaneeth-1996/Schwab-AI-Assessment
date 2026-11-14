@@ -1,53 +1,61 @@
-"""T9: re-enrollment after drop or withdrawal; "enroll only once" = one active record (§2.1)."""
+"""T9: "enroll only once" (§2.1). Dropped learners are blocked (R4); withdrawn learners may re-join (R5)."""
 
 from course_registration import LearnerStatus, Outcome
 from tests.conftest import PREREQ, assert_invariants, fill
 
 
-# after drop (A5) --------------------------------------------------------------------------------
-def test_dropped_learner_reenrolls_directly_when_seat_free(make_offering, directory):
+# after drop (A5, R4): a seat may be held only once --------------------------------------------
+def test_dropped_learner_gets_previously_dropped_with_seat_free(make_offering):
     o = make_offering(capacity=2, eligible=["a"])
     fill(o, "a"); o.drop("a")
-    assert o.enroll("a").outcome is Outcome.ENROLLED
-    assert o.snapshot().enrolled == ("a",)
-    assert_invariants(o, directory)
-
-
-def test_dropped_learner_reenroll_goes_to_back_of_waitlist_when_full(make_offering, directory):
-    o = make_offering(capacity=1, eligible=["a", "b", "c"])
-    fill(o, "a", "b", "c")
-    o.drop("a")                                    # b promoted into a's seat
-    assert o.enroll("a").outcome is Outcome.WAITLISTED
-    s = o.snapshot()
-    assert s.enrolled == ("b",) and s.waitlist == ("c", "a")
-    assert_invariants(o, directory)
-
-
-def test_dropped_learner_reenroll_rechecks_prereq_and_stores_nothing(make_offering, directory):
-    o = make_offering(capacity=2, eligible=["a"])
-    fill(o, "a"); o.drop("a")
-    directory.revoke_completion("a", PREREQ)
     before = o.snapshot()
-    assert o.enroll("a").outcome is Outcome.REJECTED
+    r = o.enroll("a")
+    assert r.outcome is Outcome.PREVIOUSLY_DROPPED and not r.ok
+    assert r.message == "Learner dropped this course and cannot enroll again."
     assert o.snapshot() == before
     assert o.snapshot().statuses["a"] is LearnerStatus.DROPPED
 
 
-def test_drop_and_reenroll_cycles_never_duplicate(make_offering, directory):
-    o = make_offering(capacity=2, eligible=["a", "b"])
+def test_dropped_learner_gets_previously_dropped_when_full(make_offering):
+    o = make_offering(capacity=1, eligible=["a", "b", "c"])
+    fill(o, "a", "b", "c")
+    o.drop("a")                                    # b promoted
+    before = o.snapshot()
+    assert o.enroll("a").outcome is Outcome.PREVIOUSLY_DROPPED
+    assert o.snapshot() == before                  # not waitlisted
+    assert o.snapshot().waitlist == ("c",)
+
+
+def test_promoted_then_dropped_learner_is_previously_dropped(make_offering):
+    """A seat gained by promotion counts as the learner's one enrollment."""
+    o = make_offering(capacity=1, eligible=["a", "b"])
     fill(o, "a", "b")
-    for _ in range(5):
-        assert o.drop("a").outcome is Outcome.DROPPED
-        assert o.enroll("a").outcome is Outcome.ENROLLED
-        assert_invariants(o, directory)
-    assert o.snapshot().enrolled.count("a") == 1
+    assert o.drop("a").promoted == ("b",)
+    o.drop("b")
+    assert o.enroll("b").outcome is Outcome.PREVIOUSLY_DROPPED
 
 
-def test_reenrolled_learner_can_drop_again(make_offering):
+def test_previously_dropped_runs_no_eligibility_check(make_offering, directory, monkeypatch):
+    """R4 runs before the prerequisite check: no eligibility lookup, and never REJECTED."""
+    o = make_offering(capacity=2, eligible=["a"])
+    fill(o, "a"); o.drop("a")
+    directory.revoke_completion("a", PREREQ)       # would be REJECTED if eligibility were checked
+    calls = []
+    original = directory.has_completed
+    monkeypatch.setattr(directory, "has_completed", lambda *args: calls.append(args) or original(*args))
+    assert o.enroll("a").outcome is Outcome.PREVIOUSLY_DROPPED
+    assert calls == []
+
+
+def test_previously_dropped_is_stable_across_repeated_requests(make_offering):
     o = make_offering(capacity=1, eligible=["a"])
-    fill(o, "a"); o.drop("a"); o.enroll("a")
-    assert o.drop("a").outcome is Outcome.DROPPED
-    assert o.drop("a").outcome is Outcome.ALREADY_DROPPED
+    fill(o, "a"); o.drop("a")
+    before = o.snapshot()
+    for _ in range(3):
+        assert o.enroll("a").outcome is Outcome.PREVIOUSLY_DROPPED
+        assert o.drop("a").outcome is Outcome.ALREADY_DROPPED
+        assert o.leave_waitlist("a").outcome is Outcome.NOT_WAITLISTED
+    assert o.snapshot() == before
 
 
 # after withdraw (A6) ----------------------------------------------------------------------------

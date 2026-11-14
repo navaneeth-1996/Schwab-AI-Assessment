@@ -38,6 +38,9 @@ def test_random_operation_sequences_preserve_invariants(make_offering, directory
         # inv 6 / R3: enroll on an active learner never changes state, and is never REJECTED
         if op == "enroll" and before.statuses.get(lid) in ACTIVE:
             assert r.outcome in (Outcome.ALREADY_ENROLLED, Outcome.ALREADY_WAITLISTED)
+        # R4: a dropped learner can never enroll again
+        if op == "enroll" and before.statuses.get(lid) is LearnerStatus.DROPPED:
+            assert r.outcome is Outcome.PREVIOUSLY_DROPPED
         # A2: REJECTED only when the learner really is ineligible
         if r.outcome is Outcome.REJECTED:
             assert not directory.has_completed(lid, PREREQ)

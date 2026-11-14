@@ -1,8 +1,8 @@
-# Design Review Checklist (final, v1.9)
+# Design Review Checklist (final, v2.0)
 
 This checklist was used to review each design decision with the candidate. Every item is
-settled; ticked boxes show the decision implemented in v1.9. The full reasoning for each change
-is in `docs/AI_USAGE.md` (Interactions 5–14).
+settled; ticked boxes show the decision implemented in v2.0. The full reasoning for each change
+is in `docs/AI_USAGE.md` (Interactions 5–14 and 17).
 
 Decision legend: `APPROVED` (kept as proposed) / `CHANGED` (candidate chose something else) /
 `NOT APPLICABLE`.
@@ -31,9 +31,9 @@ Decision legend: `APPROVED` (kept as proposed) / `CHANGED` (candidate chose some
 - Decision: NOT APPLICABLE (v1.2): nobody is removed from the waitlist any more
 
 ### A5 – Enrolled learner who dropped tries to enroll again
-- [ ] Blocked *(v1.0)*
-- [x] Allowed through the normal flow (prerequisite check → seat or back of the queue)
-- Decision: CHANGED (v1.1): "enroll only once" means no duplicate active records (R1–R4)
+- [x] Blocked: `PREVIOUSLY_DROPPED`, no eligibility check *(v1.0, restored in v2.0)*
+- [ ] Allowed through the normal flow *(v1.1–v1.9)*
+- Decision: CHANGED (v2.0): a seat may be held only once; this satisfies both the literal sentence and AC 2
 
 ### A6 – Waitlisted learner leaves the waitlist and re-enrolls
 - [x] Allowed; joins the back of the queue, or gets a seat if one is free
@@ -66,13 +66,14 @@ Decision legend: `APPROVED` (kept as proposed) / `CHANGED` (candidate chose some
 - [ ] Event-driven promotion when records change *(tried in v1.5; removed in v1.6)*
 - Decision: CHANGED (v1.6)
 
-### R1–R4 – "A learner may enroll only once" *(added v1.4)*
-- [x] No duplicate active records: never enrolled *and* waitlisted; duplicate requests rejected while active; re-enroll allowed after drop or withdraw
-- [ ] "Once ever"
-- Decision: CHANGED (v1.4), candidate's interpretation
+### R1–R5 – "A learner may enroll only once" *(added v1.4, revised v2.0)*
+- [ ] No duplicate active records; re-enroll allowed after drop or withdraw *(v1.4–v1.9)*
+- [x] No duplicate records, and a seat may be held only once: dropped learners blocked (R4); withdrawn learners may re-join (R5)
+- [ ] "Once ever", also blocking withdrawn learners
+- Decision: CHANGED (v2.0), candidate's choice (Option B)
 
 ### Eligibility check points *(added v1.3, confirmed v1.9)*
-- [x] Only at new enrollment, moving to the waitlist, and promotion; never for enrolled learners, duplicates, drops or withdrawals
+- [x] Only at new enrollment, moving to the waitlist, and promotion; never for enrolled learners, duplicates, previously dropped learners, drops or withdrawals
 - Decision: APPROVED
 
 ---

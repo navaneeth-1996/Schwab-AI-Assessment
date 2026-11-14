@@ -13,8 +13,8 @@ class LearnerStatus(str, Enum):
 
     ENROLLED = "ENROLLED"      # active
     WAITLISTED = "WAITLISTED"  # active
-    DROPPED = "DROPPED"        # inactive: dropped an enrolled seat; may enroll again
-    WITHDRAWN = "WITHDRAWN"    # inactive: left the waitlist; may enroll again
+    DROPPED = "DROPPED"        # inactive: dropped an enrolled seat; may NOT enroll again (R4)
+    WITHDRAWN = "WITHDRAWN"    # inactive: left the waitlist; may enroll again (R5)
 
 
 ACTIVE_STATUSES = frozenset({LearnerStatus.ENROLLED, LearnerStatus.WAITLISTED})
@@ -26,6 +26,7 @@ class Outcome(str, Enum):
     WAITLISTED = "WAITLISTED"
     ALREADY_ENROLLED = "ALREADY_ENROLLED"
     ALREADY_WAITLISTED = "ALREADY_WAITLISTED"
+    PREVIOUSLY_DROPPED = "PREVIOUSLY_DROPPED"  # held a seat once already; no eligibility check
     REJECTED = "REJECTED"                  # prerequisite not met; nothing stored
     # drop
     DROPPED = "DROPPED"
