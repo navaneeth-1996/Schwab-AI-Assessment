@@ -211,6 +211,27 @@ Each row below is one decision.
 Real code: full suite `114 passed` in 10/10 consecutive runs; restored `offering.py` verified
 byte-identical.
 
+## Interaction 16 – Final check against the assessment document
+**Prompt (summary):** "Are all the tests passing? Check against the document whether anything is
+missing."
+
+**AI checks and evidence:**
+- `pytest -q` → `114 passed`, both in the working copy and in a **fresh clone** set up exactly
+  as the README describes.
+- Also run on **Python 3.11, 3.12 and 3.13**: 114 passed on each. (3.10 was not available.)
+- Coverage (`coverage run --branch`): `offering.py` **100% lines and branches**; models and
+  directory 100%; `cli.py` 79% (demo argument parsing and error paths only).
+- No personal data or credentials in any committed file.
+- Deliverables, ACs 1–7, scope limits and candidate expectations re-checked against the PDF.
+
+**Found and fixed:** `DESIGN_REVIEW_CHECKLIST.md` had stopped being updated at v1.5. B2 still
+mentioned the removed `promote_waitlist()`; the A7 confirmation, A11, R1–R4 and SP1/SP2 were
+missing. Rewritten to the final v1.9 decisions. README now states the tested Python versions.
+
+**Still open (outside the AI's remit):** the candidate's own review section below, and the
+rubric file `Course-Registration-Rubric-Score.md` referenced by the assessment, which was not
+supplied.
+
 ## Files informed by AI
 | File | AI contribution | Human decision points |
 |------|-----------------|-----------------------|

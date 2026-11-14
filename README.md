@@ -32,7 +32,7 @@ In-memory, Python standard library only; pytest for tests. Implements
   waiting learners never block an eligible newcomer from a vacant seat.
 
 ## Setup
-Requires Python 3.10+.
+Requires Python 3.10+ (tested on 3.11, 3.12 and 3.13).
 ```bash
 python3 -m venv .venv
 ```
