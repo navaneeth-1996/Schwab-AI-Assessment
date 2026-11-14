@@ -39,7 +39,7 @@ pip install -r requirements-dev.txt
 ```bash
 pytest -q
 ```
-Expected: `88 passed`.
+Expected: `90 passed`.
 
 ## Run the demo
 ```bash

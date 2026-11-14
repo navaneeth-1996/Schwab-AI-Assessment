@@ -68,7 +68,7 @@ discuss again.
 
 **AI output:**
 - `course_registration/` package: `models.py`, `directory.py`, `offering.py`, `cli.py`.
-- 88 pytest tests in 7 modules, including a shared invariant checker, concurrency tests and
+- 88 pytest tests in 7 modules (90 after Interaction 4), including a shared invariant checker, concurrency tests and
   seeded random-sequence tests.
 - `examples/demo.txt`, this record, README, and the final DESIGN.md.
 
@@ -115,3 +115,14 @@ _[candidate: record your own review here. Suggested checks:]_
 | `course_registration/*.py` | Generated | Status model (DROPPED vs WITHDRAWN), single prerequisite, skip-and-remove with record |
 | `tests/*.py` | Generated | Coverage list from AC6; concurrency test fixed after deliberately breaking the code |
 | `README.md`, `docs/AI_USAGE.md` | Drafted | _[candidate review]_ |
+
+## Interaction 4 – "Enroll only once" review
+**Prompt (summary):** Candidate asked how the "a learner may enroll only once" requirement is
+handled, and which use cases were considered.
+
+**AI response (summary):** Explained the single-status-per-learner model and listed the use
+cases with their tests. While mapping cases to tests, the AI found two that had no dedicated
+test: a promoted learner calling enroll again, and repeated withdraw/re-join cycles.
+**Accepted:** added `test_promoted_learner_enrolling_again_is_duplicate` and
+`test_repeated_withdraw_and_rejoin_never_duplicates_records`. Suite: `90 passed`. No production
+code changed.
