@@ -15,6 +15,16 @@ In-memory, Python standard library only; pytest for tests. Implements
 | [`docs/AI_USAGE.md`](docs/AI_USAGE.md) | AI prompts, responses, accept/edit/reject decisions, verification evidence |
 | [`docs/DESIGN_REVIEW_CHECKLIST.md`](docs/DESIGN_REVIEW_CHECKLIST.md) | Decision checklist used during design review |
 
+## Deliverables
+| Assessment deliverable | Where |
+|------------------------|-------|
+| Runnable code for the scoped feature | [`course_registration/`](course_registration/) (logic in `offering.py`) |
+| Focused automated tests | [`tests/`](tests/): 114 tests ([test commands](#run-the-tests)) |
+| Design specification | [`docs/DESIGN.md`](docs/DESIGN.md) |
+| AI prompt and use record, with verification evidence | [`docs/AI_USAGE.md`](docs/AI_USAGE.md) |
+| Setup and run instructions | [Setup](#setup), [Run the tests](#run-the-tests), [Run the demo](#run-the-demo) below |
+| Limitations and follow-up risks | [Limitations](#limitations-and-follow-up-risks) below; full list in DESIGN.md §14 |
+
 ## Policy in brief
 - **Eligibility:** the learner must have completed the course's single prerequisite. It is
   checked **only** at new enrollment, when moving to the waitlist, and at promotion. It is never
@@ -116,6 +126,8 @@ See DESIGN.md §14. In short:
 - **Retained learners:** ineligible learners can wait indefinitely.
 - **Corrected records:** if a skipped learner's record is corrected while a seat is vacant, the
   seat is filled only at the next drop or eligible enroll (stable-data assumption).
+- **A drop is final:** a learner who drops can't re-enroll in this offering
+  (`PREVIOUSLY_DROPPED`); no admin override in scope.
 - **History:** only the current status is kept.
 - **Notifications and admin:** none (no learner notifications, no admin operations).
 - **Concurrency tests:** probabilistic.
