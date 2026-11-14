@@ -246,6 +246,31 @@ is claimed.
 | `README.md`, `docs/AI_USAGE.md` | Drafted | _[candidate review]_ |
 
 ## Candidate's independent review _[candidate to complete]_
+
+### Setup (from the repository root; Python 3.10+, tested on 3.11–3.13)
+```bash
+python3 -m venv .venv
+source .venv/bin/activate          # Windows: .venv\Scripts\activate
+pip install -r requirements-dev.txt
+```
+
+### Run
+```bash
+pytest -q                                                    # expected: 114 passed
+python -m course_registration.cli --capacity 1 < examples/demo.txt
+```
+Optional coverage check:
+```bash
+pip install coverage
+coverage run --branch -m pytest -q && coverage report -m --include="course_registration/*"
+```
+
+To check a test catches a bug: change one rule in `course_registration/offering.py` (for
+example, replace `with self._lock:` in `drop` with `if True:`, or make `_promote` remove
+ineligible learners), run `pytest -q`, confirm a failure, then undo the change with
+`git checkout course_registration/offering.py`.
+
+### Review checklist
 - [ ] Read `course_registration/offering.py` end to end against DESIGN.md §2, §8 and §2.3.
 - [ ] Run `pytest -q` yourself and paste the output below.
 - [ ] Introduce at least one defect of your own and confirm a test fails.
@@ -255,4 +280,8 @@ is claimed.
 ```
 <paste your pytest output here>
 ```
+
+**Defect introduced and result:** _[candidate]_
+
+**Changes made or rejected after review:** _[candidate]_
 
