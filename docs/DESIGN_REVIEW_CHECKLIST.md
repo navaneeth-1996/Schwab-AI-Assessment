@@ -20,11 +20,11 @@ Status legend for the Decision line: `APPROVED` / `CHANGED` / `NEEDS DISCUSSION`
 - Decision:
 
 ### A2 – Ineligible learner at enroll time
-- [x] Rejected (`PREREQUISITE_NOT_MET`); nothing recorded; may retry later *(current)*
+- [ ] Rejected (`PREREQUISITE_NOT_MET`); nothing recorded; may retry later *(previous)*
 - [ ] Rejected and recorded, so repeat attempts are blocked
-- [ ] Other
-- Notes:
-- Decision:
+- [x] Other: rejected **and recorded** as status `REJECTED`; the learner may enroll again once eligible *(current, v1.5)*
+- Notes: Send the rejected message and keep a rejection state.
+- Decision: CHANGED
 
 ### A3 – Learner at the front of the waitlist is no longer eligible when a seat opens
 - [ ] Skip and **remove**: status `REMOVED`, audit record kept, next learner checked *(previous)*
