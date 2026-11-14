@@ -312,13 +312,17 @@ ineligible learners), run `pytest -q`, confirm a failure, then undo the change w
 
 ### Review checklist
 - [ ] Read `course_registration/offering.py` end to end against DESIGN.md §2, §8 and §2.3.
-- [ ] Run `pytest -q` yourself and paste the output below.
+- [x] Run `pytest -q` yourself and paste the output below.
 - [ ] Introduce at least one defect of your own and confirm a test fails.
 - [ ] Run the demo and check it against the use-case table.
 - [ ] Note anything you changed or rejected from the generated code.
 
+`pytest -q` from `Schwab-AI-Assessment`, 14 Nov 2026:
+
 ```
-<paste your pytest output here>
+............................................................................ [ 66%]
+......................................                                       [100%]
+114 passed in 0.77s
 ```
 
 **Defect introduced and result:** _[candidate]_
