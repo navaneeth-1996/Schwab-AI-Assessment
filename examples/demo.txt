@@ -1,0 +1,22 @@
+# Run with: python -m course_registration.cli --capacity 1 < examples/demo.txt
+learner alice CS101
+learner bob CS101
+learner carol CS101
+learner erin CS101
+learner dave
+enroll alice
+enroll dave
+enroll bob
+enroll carol
+enroll erin
+enroll bob
+leave carol
+enroll carol
+show
+revoke bob CS101
+drop alice
+show
+enroll alice
+drop alice
+enroll bob
+drop nobody
