@@ -1,4 +1,11 @@
-# Course Waitlist – Design Specification (v1.0)
+# Course Waitlist – Design Specification (v1.1)
+
+> **Status: v1.1 DRAFT – under review, not yet implemented.** The code still implements v1.0.
+>
+> Changes from v1.0:
+> - A5: dropped learners may re-enroll through the normal flow (was: blocked).
+> - New §2.1: "enroll only once" defined as at most one active record.
+> - State table, outcome table and invariant 6 updated to match.
 
 ## 1. Scope
 One course offering. Operations: **enroll**, **drop** (enrolled learner), **leave waitlist**
@@ -15,27 +22,38 @@ persistence/database, identity, payments, multi-term, configurable policy engine
 | A2 | Ineligible at enroll | Rejected with `PREREQUISITE_NOT_MET`; **no state is recorded**; never waitlisted. The learner may retry after completing the prerequisite. | Spec: "eligible learners join the waitlist" |
 | A3 | Ineligible at front of queue | **Skip and remove.** Eligibility is re-checked at promotion time. An ineligible learner is removed from the waitlist, status becomes `REMOVED`, a `RemovalRecord` is kept, and promotion continues with the next learner. | Candidate decision (vs. "skip but keep") |
 | A4 | Re-enroll after removal | Treated as a duplicate: `PREVIOUSLY_REMOVED`, no state change. **Permanent** for this offering, even if the prerequisite is later completed. | Candidate decision |
-| A5 | Re-enroll after drop | A learner who was **enrolled and dropped** is `DROPPED` and **may not re-enroll** (`PREVIOUSLY_DROPPED`). | Candidate decision |
+| A5 | Re-enroll after drop | A learner who was **enrolled and dropped** (`DROPPED`) **may enroll again** as a fresh request: prerequisite check → seat if free → otherwise back of the waitlist → otherwise rejected (`PREREQUISITE_NOT_MET`). | Candidate decision (changed in v1.1; was "blocked") |
 | A6 | Leave waitlist | A waitlisted learner may leave voluntarily → `WITHDRAWN`. They never held a seat, so they **may enroll again**; they re-join at the **back** of the queue (or get a seat directly if one is free). No promotion runs, since no seat opened. | Candidate decision |
 | A7 | Enrolled learner loses prerequisite | Keeps the seat. Eligibility is evaluated only at enroll and promotion time. | Candidate decision |
 | A8 | Waitlist size | Unlimited. | Candidate decision |
 | A9 | `drop` vs `leave_waitlist` | Separate operations. `drop` on a waitlisted learner returns `NOT_ENROLLED` with a hint, instead of guessing intent. | Design choice |
 | A10 | Learner identity | Learner IDs must be non-empty strings known to the `LearnerDirectory`; anything else is `INVALID_REQUEST`. | Design choice |
 
+### 2.1 Interpretation of "a learner may enroll only once"
+A learner has **at most one active record** (`ENROLLED` or `WAITLISTED`) at any time. A second
+enroll while active returns `ALREADY_ENROLLED` / `ALREADY_WAITLISTED` and changes nothing.
+Once a learner is no longer active (`DROPPED` or `WITHDRAWN`) they may enroll again through
+the same flow as a first-time learner. `REMOVED` is the only state that blocks re-enrollment.
+
+The prerequisite is checked at every point where a learner gains a place:
+1. enroll, when a seat is free → `ENROLLED`;
+2. enroll, when the course is full → `WAITLISTED`;
+3. promotion from the waitlist → `ENROLLED`, or `REMOVED` if no longer eligible.
+
 ## 3. Learner state model
 Each learner holds at most one status per offering.
 
 | From | Event | To |
 |------|-------|----|
-| none / WITHDRAWN | enroll, eligible, seat free | ENROLLED |
-| none / WITHDRAWN | enroll, eligible, course full | WAITLISTED (back of queue) |
-| none / WITHDRAWN | enroll, not eligible | unchanged (`PREREQUISITE_NOT_MET`) |
+| none / DROPPED / WITHDRAWN | enroll, eligible, seat free | ENROLLED |
+| none / DROPPED / WITHDRAWN | enroll, eligible, course full | WAITLISTED (back of queue) |
+| none / DROPPED / WITHDRAWN | enroll, not eligible | unchanged (`PREREQUISITE_NOT_MET`) |
 | WAITLISTED | leave_waitlist | WITHDRAWN |
 | WAITLISTED | promotion, still eligible | ENROLLED |
 | WAITLISTED | promotion, no longer eligible | REMOVED (terminal) |
-| ENROLLED | drop | DROPPED (terminal) |
+| ENROLLED | drop | DROPPED |
 
-`PREREQUISITE_NOT_MET` on enroll leaves the learner in their prior state (none or WITHDRAWN).
+`PREREQUISITE_NOT_MET` on enroll leaves the learner in their prior state (none, DROPPED or WITHDRAWN). `REMOVED` is the only terminal state.
 
 ## 4. Service boundary
 | Component | Responsibility |
@@ -59,14 +77,14 @@ is a programming error rather than a learner request.
 
 | Operation | Success (`ok=True`, state changes) | Rejection (`ok=False`, state unchanged) |
 |-----------|------------------------------------|-----------------------------------------|
-| enroll | `ENROLLED`, `WAITLISTED` | `ALREADY_ENROLLED`, `ALREADY_WAITLISTED`, `PREVIOUSLY_DROPPED`, `PREVIOUSLY_REMOVED`, `PREREQUISITE_NOT_MET`, `INVALID_REQUEST` |
+| enroll | `ENROLLED`, `WAITLISTED` | `ALREADY_ENROLLED`, `ALREADY_WAITLISTED`, `PREVIOUSLY_REMOVED`, `PREREQUISITE_NOT_MET`, `INVALID_REQUEST` |
 | drop | `DROPPED` | `ALREADY_DROPPED`, `NOT_ENROLLED`, `INVALID_REQUEST` |
 | leave_waitlist | `WITHDRAWN` | `NOT_WAITLISTED`, `INVALID_REQUEST` |
 
 ## 6. Data model
 | Field | Type | Notes |
 |-------|------|-------|
-| `_status` | `dict[str, LearnerStatus]` | Authoritative per-learner state, including terminal states (DROPPED, REMOVED, WITHDRAWN) needed for duplicate detection. |
+| `_status` | `dict[str, LearnerStatus]` | Authoritative per-learner state, including inactive states (DROPPED, WITHDRAWN) and the terminal REMOVED state, needed for duplicate detection and history. |
 | `_enrolled` | `dict[str, None]` | Insertion-ordered set. |
 | `_waitlist` | `OrderedDict[str, int]` | learner → join sequence number. O(1) FIFO pop and O(1) removal for `leave_waitlist`. |
 | `_removals` | `list[RemovalRecord]` | Audit of skip-and-remove decisions (learner, reason, sequence). |
@@ -80,7 +98,7 @@ after each step of 25 seeded random 200-step sequences.
 3. **No idle seat while learners wait:** if the waitlist is non-empty, the course is full.
 4. The status map agrees exactly with the enrolled, waitlisted, and removed collections.
 5. Every rejection outcome leaves the snapshot identical to before the call.
-6. `DROPPED` and `REMOVED` are terminal: enroll always returns `PREVIOUSLY_*`.
+6. Enroll on an active learner (`ENROLLED`/`WAITLISTED`) never changes state; `REMOVED` is terminal (enroll returns `PREVIOUSLY_REMOVED`).
 
 ## 8. Promotion rule
 Runs after a successful `drop`, inside the same critical section:

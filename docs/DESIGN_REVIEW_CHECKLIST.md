@@ -41,11 +41,11 @@ Status legend for the Decision line: `APPROVED` / `CHANGED` / `NEEDS DISCUSSION`
 - Decision:
 
 ### A5 – Enrolled learner who DROPPED tries to enroll again
-- [x] Blocked (`PREVIOUSLY_DROPPED`) *(current)*
-- [ ] Allowed; seat if free, otherwise back of the waitlist
+- [ ] Blocked (`PREVIOUSLY_DROPPED`) *(previous)*
+- [x] Allowed; prerequisite re-checked, seat if free, otherwise back of the waitlist *(current, v1.1)*
 - [ ] Other
-- Notes:
-- Decision:
+- Notes: "Enroll only once" means one active record (enrolled or waitlisted), not once ever.
+- Decision: CHANGED
 
 ### A6 – Waitlisted learner leaves the waitlist (WITHDRAWN) and re-enrolls
 - [x] Allowed; joins the **back** of the queue (or gets a seat directly if one is free) *(current)*
