@@ -46,6 +46,12 @@ In-memory, Python standard library only; pytest for tests. Implements
 ## Setup
 Requires Python 3.10+ (tested on 3.11, 3.12 and 3.13).
 ```bash
+git clone https://github.com/navaneeth-1996/Schwab-AI-Assessment.git
+```
+```bash
+cd Schwab-AI-Assessment
+```
+```bash
 python3 -m venv .venv
 ```
 ```bash
