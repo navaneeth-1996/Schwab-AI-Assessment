@@ -27,18 +27,18 @@ Status legend for the Decision line: `APPROVED` / `CHANGED` / `NEEDS DISCUSSION`
 - Decision:
 
 ### A3 – Learner at the front of the waitlist is no longer eligible when a seat opens
-- [x] Skip and **remove**: status `REMOVED`, audit record kept, next learner checked *(current)*
-- [ ] Skip but **keep place**: stays waiting; skipped each time until eligible again
+- [ ] Skip and **remove**: status `REMOVED`, audit record kept, next learner checked *(previous)*
+- [x] Skip but **keep place**: stays waiting at the same position; skipped each time until eligible again *(current, v1.2)*
 - [ ] Other
-- Notes:
-- Decision:
+- Notes: Losing eligibility while waiting shouldn't cost the learner their place. Eligibility is still re-checked at promotion (AC 3 and AC 4), so they are not promoted while ineligible.
+- Decision: CHANGED
 
 ### A4 – REMOVED learner tries to enroll again
-- [x] Blocked permanently (`PREVIOUSLY_REMOVED`), even after completing the prerequisite *(current)*
+- [ ] Blocked permanently (`PREVIOUSLY_REMOVED`) *(previous)*
 - [ ] Allowed if now eligible; joins the back of the queue
 - [ ] Other
-- Notes:
-- Decision:
+- Notes: The REMOVED state no longer exists after A3 changed to skip and retain.
+- Decision: NOT APPLICABLE (v1.2)
 
 ### A5 – Enrolled learner who DROPPED tries to enroll again
 - [ ] Blocked (`PREVIOUSLY_DROPPED`) *(previous)*
@@ -95,7 +95,8 @@ Status legend for the Decision line: `APPROVED` / `CHANGED` / `NEEDS DISCUSSION`
 - Decision:
 
 ### B2 – Promotion scope
-- [x] Only the learner at the front is checked; the loop continues until seats are full or the waitlist is empty *(current)*
+- [ ] Only the learner at the front is checked; ineligible ones removed *(previous)*
+- [x] Scan the waitlist in order and promote the first eligible learner(s); ineligible learners stay in place. Promotion also runs before a newcomer is seated, and via `promote_waitlist()` *(current, v1.2)*
 - [ ] On each promotion, sweep the **whole** waitlist and remove every ineligible learner
 - [ ] Other
 - Notes:
@@ -124,7 +125,7 @@ Status legend for the Decision line: `APPROVED` / `CHANGED` / `NEEDS DISCUSSION`
 - Decision:
 
 ### B6 – Audit trail
-- [x] Only removals are recorded (`RemovalRecord`: learner, reason, sequence) *(current)*
+- [x] No stored audit; each `Result` reports `promoted` and `skipped` learners *(current, v1.2; RemovalRecord deleted)*
 - [ ] Record every state change (enroll, waitlist, drop, withdraw, promote, remove) in an event log
 - [ ] Other
 - Notes:
