@@ -15,6 +15,7 @@ def test_malformed_learner_id_is_invalid_and_state_unchanged(make_offering, op, 
     r = getattr(o, op)(bad)
     assert r.outcome is Outcome.INVALID_REQUEST and not r.ok
     assert o.snapshot() == before
+    assert set(o.snapshot().statuses) == {"a", "b"}   # no status recorded for the bad ID
 
 
 @pytest.mark.parametrize("op", ["enroll", "drop", "leave_waitlist"])
@@ -25,6 +26,7 @@ def test_unknown_learner_is_invalid(make_offering, op):
     r = getattr(o, op)("ghost")
     assert r.outcome is Outcome.INVALID_REQUEST and "Unknown" in r.message
     assert o.snapshot() == before
+    assert "ghost" not in o.snapshot().statuses
     assert_invariants(o)
 
 

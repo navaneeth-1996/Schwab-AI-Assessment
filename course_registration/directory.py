@@ -9,9 +9,10 @@ from typing import Iterable
 class LearnerDirectory:
     """Maps learner IDs to the set of course IDs they have completed.
 
-    Records are mutable on purpose: a learner's eligibility can change while they wait
-    (e.g. a completion is revoked or corrected), which is what the promotion-time
-    eligibility re-check exists to handle.
+    The offering only *queries* this directory, at the eligibility check points in DESIGN.md §2.2.
+    Records are assumed stable during normal operation (A11); the mutators exist so that the
+    promotion-time safeguard (a record revoked or corrected while a learner waits) can be
+    exercised. A record change never triggers anything in the offering.
     """
 
     def __init__(self) -> None:

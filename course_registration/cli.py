@@ -24,19 +24,19 @@ def _fmt(result) -> str:
     line = f"{result.outcome.value}: {result.message}"
     if result.promoted:
         line += f" | promoted: {', '.join(result.promoted)}"
-    if result.removed:
-        line += f" | removed (ineligible): {', '.join(r.learner_id for r in result.removed)}"
+    if result.skipped:
+        line += f" | skipped (ineligible, retained): {', '.join(result.skipped)}"
     return line
 
 
 def run(lines, out, offering: CourseOffering, directory: LearnerDirectory) -> None:
     ops = {"enroll": offering.enroll, "drop": offering.drop, "leave": offering.leave_waitlist}
     for raw in lines:
-        parts = shlex.split(raw)
-        if not parts or parts[0].startswith("#"):
+        if not raw.strip() or raw.lstrip().startswith("#"):
             continue
-        cmd, args = parts[0].lower(), parts[1:]
         try:
+            parts = shlex.split(raw)
+            cmd, args = parts[0].lower(), parts[1:]
             if cmd in ("quit", "exit"):
                 return
             if cmd in ops and len(args) == 1:

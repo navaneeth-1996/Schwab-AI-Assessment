@@ -9,13 +9,15 @@ from typing import Mapping
 
 
 class LearnerStatus(str, Enum):
-    """The single state a learner holds with respect to one offering."""
+    """The single state a learner holds with respect to one offering (DESIGN.md §3)."""
 
-    ENROLLED = "ENROLLED"
-    WAITLISTED = "WAITLISTED"
-    DROPPED = "DROPPED"        # was enrolled, then dropped -> may NOT enroll again
-    WITHDRAWN = "WITHDRAWN"    # left the waitlist voluntarily -> MAY enroll again
-    REMOVED = "REMOVED"        # skipped at promotion for failing the prerequisite -> may NOT enroll again
+    ENROLLED = "ENROLLED"      # active
+    WAITLISTED = "WAITLISTED"  # active
+    DROPPED = "DROPPED"        # inactive: dropped an enrolled seat; may enroll again
+    WITHDRAWN = "WITHDRAWN"    # inactive: left the waitlist; may enroll again
+
+
+ACTIVE_STATUSES = frozenset({LearnerStatus.ENROLLED, LearnerStatus.WAITLISTED})
 
 
 class Outcome(str, Enum):
@@ -24,9 +26,7 @@ class Outcome(str, Enum):
     WAITLISTED = "WAITLISTED"
     ALREADY_ENROLLED = "ALREADY_ENROLLED"
     ALREADY_WAITLISTED = "ALREADY_WAITLISTED"
-    PREVIOUSLY_DROPPED = "PREVIOUSLY_DROPPED"
-    PREVIOUSLY_REMOVED = "PREVIOUSLY_REMOVED"
-    PREREQUISITE_NOT_MET = "PREREQUISITE_NOT_MET"
+    REJECTED = "REJECTED"                  # prerequisite not met; nothing stored
     # drop
     DROPPED = "DROPPED"
     ALREADY_DROPPED = "ALREADY_DROPPED"
@@ -38,17 +38,8 @@ class Outcome(str, Enum):
     INVALID_REQUEST = "INVALID_REQUEST"
 
 
-# Outcomes that change offering state. Every other outcome is guaranteed to leave state untouched.
+# Outcomes that change offering state. Every other outcome leaves state untouched (invariant 5).
 SUCCESS_OUTCOMES = frozenset({Outcome.ENROLLED, Outcome.WAITLISTED, Outcome.DROPPED, Outcome.WITHDRAWN})
-
-
-@dataclass(frozen=True)
-class RemovalRecord:
-    """Audit entry written when an ineligible learner is skipped and removed during promotion."""
-
-    learner_id: str
-    reason: Outcome
-    sequence: int  # offering-local event counter at the time of removal
 
 
 @dataclass(frozen=True)
@@ -56,8 +47,8 @@ class Result:
     outcome: Outcome
     learner_id: object
     message: str
-    promoted: tuple[str, ...] = ()               # learners moved waitlist -> enrolled by this call
-    removed: tuple[RemovalRecord, ...] = ()      # learners skipped and removed by this call
+    promoted: tuple[str, ...] = ()   # learners moved waitlist -> enrolled by this call
+    skipped: tuple[str, ...] = ()    # ineligible learners passed over and retained by this call
 
     @property
     def ok(self) -> bool:
@@ -72,9 +63,8 @@ class OfferingState:
     prerequisite_course_id: str
     capacity: int
     enrolled: tuple[str, ...]
-    waitlist: tuple[str, ...]                    # front of queue first
+    waitlist: tuple[str, ...]        # front of queue first
     statuses: Mapping[str, LearnerStatus] = field(default_factory=lambda: MappingProxyType({}))
-    removals: tuple[RemovalRecord, ...] = ()
 
     @property
     def seats_available(self) -> int:

@@ -1,4 +1,4 @@
-"""Enrollment, drop, and FIFO waitlist promotion for one course offering."""
+"""Enrollment, drop, and FIFO waitlist promotion for one course offering (DESIGN.md v1.9)."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from collections import OrderedDict
 from types import MappingProxyType
 
 from .directory import LearnerDirectory
-from .models import LearnerStatus, OfferingState, Outcome, RemovalRecord, Result
+from .models import LearnerStatus, OfferingState, Outcome, Result
 
 
 def _valid_id(value: object) -> bool:
@@ -17,15 +17,20 @@ def _valid_id(value: object) -> bool:
 class CourseOffering:
     """A single course offering with a fixed capacity and one prerequisite course.
 
-    Policy (see docs/DESIGN.md):
-      * Eligible  <=>  the learner has completed ``prerequisite_course_id``.
-      * Ineligible learners are rejected at enroll time and never join the waitlist.
-      * Eligibility is re-checked at promotion time; a learner who is no longer eligible is
-        skipped and REMOVED (with an audit record), and promotion moves to the next learner.
-      * DROPPED and REMOVED learners may not enroll again; WITHDRAWN learners may.
+    Policy summary (see docs/DESIGN.md for the full rules):
+      * Eligible  <=>  the learner has completed ``prerequisite_course_id`` (A1).
+      * Eligibility is checked ONLY at: new enrollment, moving to the waitlist, and promotion
+        (§2.2). Never for already-enrolled learners, duplicates, drops or withdrawals (A7).
+      * "Enroll only once" = at most one active record (ENROLLED or WAITLISTED) per learner.
+        DROPPED and WITHDRAWN learners may enroll again through the normal flow (§2.1).
+      * A failed prerequisite check returns REJECTED and stores nothing (A2).
+      * Promotion is FIFO over the waitlist. An ineligible learner is skipped and RETAINED at
+        the same position (A3). Promotion runs after every drop (P1) and before an eligible
+        newcomer is seated (P2), so eligible waitlisted learners always come first (SP1), and
+        ineligible ones never block a newcomer from a vacant seat (SP2).
 
-    Thread safety: every public method runs entirely under one lock, so a drop and the
-    promotion it triggers are a single atomic step.
+    Thread safety: every public method, and any promotion it triggers, runs entirely under one
+    lock, so check-then-act sequences and drop -> promote are atomic.
     """
 
     def __init__(
@@ -53,9 +58,8 @@ class CourseOffering:
 
         self._lock = threading.Lock()
         self._status: dict[str, LearnerStatus] = {}
-        self._enrolled: dict[str, None] = {}            # insertion-ordered set
-        self._waitlist: OrderedDict[str, int] = OrderedDict()  # learner -> join sequence
-        self._removals: list[RemovalRecord] = []
+        self._enrolled: dict[str, None] = {}                     # insertion-ordered set
+        self._waitlist: OrderedDict[str, int] = OrderedDict()   # learner -> join sequence
         self._seq = 0
 
     # ------------------------------------------------------------------ public API
@@ -67,41 +71,47 @@ class CourseOffering:
                 return invalid
             assert isinstance(learner_id, str)
 
+            # R3: the duplicate check runs before the prerequisite check, so an active learner
+            # always gets the duplicate result and is never re-evaluated for eligibility.
             status = self._status.get(learner_id)
             if status is LearnerStatus.ENROLLED:
-                return self._result(Outcome.ALREADY_ENROLLED, learner_id, "Learner is already enrolled.")
+                return Result(Outcome.ALREADY_ENROLLED, learner_id, "Learner is already enrolled.")
             if status is LearnerStatus.WAITLISTED:
-                pos = list(self._waitlist).index(learner_id) + 1
-                return self._result(
-                    Outcome.ALREADY_WAITLISTED, learner_id, f"Learner is already waitlisted (position {pos})."
-                )
-            if status is LearnerStatus.DROPPED:
-                return self._result(
-                    Outcome.PREVIOUSLY_DROPPED, learner_id, "Learner dropped this course and cannot re-enroll."
-                )
-            if status is LearnerStatus.REMOVED:
-                return self._result(
-                    Outcome.PREVIOUSLY_REMOVED,
+                return Result(
+                    Outcome.ALREADY_WAITLISTED,
                     learner_id,
-                    "Learner was removed from the waitlist for not meeting the prerequisite and cannot re-enroll.",
-                )
-            # status is None or WITHDRAWN: treat as a fresh request.
-            if not self._eligible(learner_id):
-                return self._result(
-                    Outcome.PREREQUISITE_NOT_MET,
-                    learner_id,
-                    f"Prerequisite {self.prerequisite_course_id} not completed.",
+                    f"Learner is already waitlisted (position {self._position(learner_id)}).",
                 )
 
-            if len(self._enrolled) < self.capacity:
-                self._enrolled[learner_id] = None
-                self._status[learner_id] = LearnerStatus.ENROLLED
-                return self._result(Outcome.ENROLLED, learner_id, "Enrolled.")
+            # C1 / C2: one eligibility check, before the seat-or-waitlist decision.
+            if not self._eligible(learner_id):
+                return Result(
+                    Outcome.REJECTED,
+                    learner_id,
+                    f"Rejected: prerequisite {self.prerequisite_course_id} not completed.",
+                )
+
+            promoted: list[str] = []
+            skipped: list[str] = []
+            if self._has_vacancy():
+                # P2 / SP1: eligible waitlisted learners are seated before the newcomer.
+                promoted, skipped = self._promote()
+                if self._has_vacancy():
+                    # SP2: any remaining vacancy goes to the newcomer.
+                    self._enrolled[learner_id] = None
+                    self._status[learner_id] = LearnerStatus.ENROLLED
+                    return Result(
+                        Outcome.ENROLLED, learner_id, "Enrolled.", tuple(promoted), tuple(skipped)
+                    )
 
             self._waitlist[learner_id] = self._next_seq()
             self._status[learner_id] = LearnerStatus.WAITLISTED
-            return self._result(
-                Outcome.WAITLISTED, learner_id, f"Course full; waitlisted at position {len(self._waitlist)}."
+            return Result(
+                Outcome.WAITLISTED,
+                learner_id,
+                f"Course full; waitlisted at position {len(self._waitlist)}.",
+                tuple(promoted),
+                tuple(skipped),
             )
 
     def drop(self, learner_id: object) -> Result:
@@ -113,17 +123,16 @@ class CourseOffering:
 
             status = self._status.get(learner_id)
             if status is LearnerStatus.DROPPED:
-                return self._result(Outcome.ALREADY_DROPPED, learner_id, "Learner has already dropped this course.")
+                return Result(Outcome.ALREADY_DROPPED, learner_id, "Learner has already dropped this course.")
             if status is not LearnerStatus.ENROLLED:
                 hint = " Use leave_waitlist to leave the waitlist." if status is LearnerStatus.WAITLISTED else ""
-                return self._result(Outcome.NOT_ENROLLED, learner_id, "Learner is not enrolled." + hint)
+                return Result(Outcome.NOT_ENROLLED, learner_id, "Learner is not enrolled." + hint)
 
+            # No eligibility check on drop (A7).
             del self._enrolled[learner_id]
             self._status[learner_id] = LearnerStatus.DROPPED
-            promoted, removed = self._promote()
-            return self._result(
-                Outcome.DROPPED, learner_id, "Dropped.", promoted=tuple(promoted), removed=tuple(removed)
-            )
+            promoted, skipped = self._promote()  # P1
+            return Result(Outcome.DROPPED, learner_id, "Dropped.", tuple(promoted), tuple(skipped))
 
     def leave_waitlist(self, learner_id: object) -> Result:
         with self._lock:
@@ -133,12 +142,12 @@ class CourseOffering:
             assert isinstance(learner_id, str)
 
             if self._status.get(learner_id) is not LearnerStatus.WAITLISTED:
-                return self._result(Outcome.NOT_WAITLISTED, learner_id, "Learner is not on the waitlist.")
+                return Result(Outcome.NOT_WAITLISTED, learner_id, "Learner is not on the waitlist.")
 
             del self._waitlist[learner_id]
             self._status[learner_id] = LearnerStatus.WITHDRAWN
-            # No seat opened, so no promotion is needed.
-            return self._result(Outcome.WITHDRAWN, learner_id, "Withdrawn from the waitlist; may enroll again.")
+            # No seat opened, so no promotion (§8.2).
+            return Result(Outcome.WITHDRAWN, learner_id, "Withdrawn from the waitlist; may enroll again.")
 
     def snapshot(self) -> OfferingState:
         with self._lock:
@@ -149,42 +158,43 @@ class CourseOffering:
                 enrolled=tuple(self._enrolled),
                 waitlist=tuple(self._waitlist),
                 statuses=MappingProxyType(dict(self._status)),
-                removals=tuple(self._removals),
             )
 
     # ------------------------------------------------------------------ internals (lock held)
 
-    def _promote(self) -> tuple[list[str], list[RemovalRecord]]:
-        """Fill open seats from the front of the waitlist, skipping and removing ineligible learners."""
+    def _promote(self) -> tuple[list[str], list[str]]:
+        """One FIFO pass: seat the earliest eligible learners; skip and retain ineligible ones (C3)."""
         promoted: list[str] = []
-        removed: list[RemovalRecord] = []
-        while len(self._enrolled) < self.capacity and self._waitlist:
-            learner_id, _ = self._waitlist.popitem(last=False)
+        skipped: list[str] = []
+        for learner_id in list(self._waitlist):
+            if not self._has_vacancy():
+                break
             if self._eligible(learner_id):
+                del self._waitlist[learner_id]
                 self._enrolled[learner_id] = None
                 self._status[learner_id] = LearnerStatus.ENROLLED
                 promoted.append(learner_id)
             else:
-                record = RemovalRecord(learner_id, Outcome.PREREQUISITE_NOT_MET, self._next_seq())
-                self._removals.append(record)
-                self._status[learner_id] = LearnerStatus.REMOVED
-                removed.append(record)
-        return promoted, removed
+                skipped.append(learner_id)  # retained: same FIFO slot, re-checked next time
+        return promoted, skipped
+
+    def _has_vacancy(self) -> bool:
+        return len(self._enrolled) < self.capacity
 
     def _eligible(self, learner_id: str) -> bool:
         return self._directory.has_completed(learner_id, self.prerequisite_course_id)
 
+    def _position(self, learner_id: str) -> int:
+        return list(self._waitlist).index(learner_id) + 1
+
     def _validate(self, learner_id: object) -> Result | None:
         if not _valid_id(learner_id):
-            return self._result(Outcome.INVALID_REQUEST, learner_id, "learner_id must be a non-empty string.")
+            return Result(Outcome.INVALID_REQUEST, learner_id, "learner_id must be a non-empty string.")
         if not self._directory.exists(learner_id):  # type: ignore[arg-type]
-            return self._result(Outcome.INVALID_REQUEST, learner_id, "Unknown learner.")
+            return Result(Outcome.INVALID_REQUEST, learner_id, "Unknown learner.")
         return None
 
     def _next_seq(self) -> int:
         self._seq += 1
         return self._seq
 
-    @staticmethod
-    def _result(outcome: Outcome, learner_id: object, message: str, **extra) -> Result:
-        return Result(outcome=outcome, learner_id=learner_id, message=message, **extra)

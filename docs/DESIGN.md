@@ -1,8 +1,7 @@
 # Course Waitlist – Design Specification (v1.9)
 
-> **Status: v1.9 – under review; not yet implemented** (the code still implements v1.0).
-> Revision history (v1.0 → v1.9) and the reasoning behind each decision will be recorded in
-> `docs/AI_USAGE.md` during implementation; until then, see the git history of this file.
+> **Status: v1.9 – signed off and implemented.** Revision history (v1.0 → v1.9) and the
+> reasoning behind each decision are recorded in `docs/AI_USAGE.md`.
 
 ## 1. Scope
 One course offering. Operations: **enroll**, **drop** (enrolled learner), **leave waitlist**
@@ -282,9 +281,9 @@ waiting learner was ineligible at the last promotion (invariant 3). So "eligible
 | Prioritise correct capacity/queue behaviour over feature count | ✅ Invariants 1–8 asserted throughout; no extra infrastructure (no event plumbing, no public promotion API) |
 | No credentials or sensitive data in prompts/records | ✅ Fictional learner IDs only |
 | Design spec covers boundary, data/API, invariants, promotion rule, concurrency/persistence, assumptions/tradeoffs | ✅ §2–§10 |
-| Runnable code, focused tests, setup/run instructions, limitations summary | ⏳ Code and README to be updated after sign-off; limitations in §14 |
+| Runnable code, focused tests, setup/run instructions, limitations summary | ✅ `course_registration/`, `tests/` (111 tests), `README.md`, §14 |
 
-## 13. Test plan (to implement after sign-off)
+## 13. Test plan (implemented; see README for the file mapping)
 | # | Scenario | AC |
 |---|----------|----|
 | T1 | Enroll with a free seat and the prerequisite met → `ENROLLED`; fill to exact capacity | 1 |
@@ -329,4 +328,4 @@ waiting learner was ineligible at the last promotion (invariant 3). So "eligible
 | O3 | How promotion is triggered | **Resolved (v1.6):** automatic on drop (P1) and before seating a newcomer (P2); no reaction to record changes; no public `promote_waitlist()` |
 | O4 | Should retained ineligible learners expire? | **Resolved (v1.5):** no; they keep their FIFO slot and are re-checked at every promotion |
 
-No open items remain. Next step: candidate sign-off, then implementation per §13.
+No open items remain.

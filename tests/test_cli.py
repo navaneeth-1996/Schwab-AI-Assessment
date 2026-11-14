@@ -11,6 +11,9 @@ def test_demo_script_runs_end_to_end():
     out = io.StringIO()
     run((Path(__file__).parent.parent / "examples" / "demo.txt").read_text().splitlines(), out, o, d)
     text = out.getvalue()
-    assert "DROPPED: Dropped. | promoted: erin | removed (ineligible): bob" in text
-    assert "PREVIOUSLY_DROPPED" in text and "PREVIOUSLY_REMOVED" in text
-    assert o.snapshot().enrolled == ("erin",) and o.snapshot().waitlist == ("carol",)
+    assert "REJECTED: Rejected: prerequisite CS101 not completed." in text
+    assert "DROPPED: Dropped. | promoted: cara | skipped (ineligible, retained): ben" in text
+    assert "DROPPED: Dropped. | promoted: ben" in text
+    s = o.snapshot()
+    assert s.enrolled == ("ben",)
+    assert s.waitlist == ("amy", "dan")

@@ -60,10 +60,10 @@ discuss again.
 | Suggestion | Decision |
 |-----------|----------|
 | Q1: allow re-enroll after any voluntary action | **Rejected in part / edited**: candidate split it into two states. `DROPPED` (was enrolled) **cannot** re-enroll; `WITHDRAWN` (left the waitlist) **can** re-enroll. |
-| Q2: removal block is permanent | Not answered explicitly; **AI default applied**, documented as A4. _[candidate: confirm]_ |
-| Q3: enrolled learner keeps the seat | Not answered explicitly; **AI default applied**, documented as A7. _[candidate: confirm]_ |
+| Q2: removal block is permanent | Not answered explicitly; AI default applied at first. **Became moot in v1.2** (skip and remove replaced by skip and retain). |
+| Q3: enrolled learner keeps the seat | AI default applied at first; **explicitly confirmed by the candidate in v1.9** (no eligibility checks for enrolled learners). |
 
-## Interaction 3 – Implementation and tests
+## Interaction 3 – First implementation (v1.0, superseded by v1.9)
 **Prompt (summary):** The DROPPED/WITHDRAWN decision above, which implied "go ahead".
 
 **AI output:**
@@ -97,25 +97,6 @@ discuss again.
    test was added.
 5. Replaced an unclear ASCII state diagram in DESIGN.md with a transition table.
 
-_[candidate: record your own review here. Suggested checks:]_
-- [ ] Read `offering.py` end to end against DESIGN.md §2 and §8.
-- [ ] Run `pytest -q` yourself and paste the output below.
-- [ ] Introduce at least one defect of your own and confirm a test fails.
-- [ ] Confirm or change A4 (permanent removal block) and A7 (enrolled learner keeps the seat).
-- [ ] Note anything you changed or rejected from the generated code.
-
-```
-<paste your pytest output here>
-```
-
-## Files informed by AI
-| File | AI contribution | Human decision points |
-|------|-----------------|-----------------------|
-| `docs/DESIGN.md` | Drafted | All policy rows A1–A6 decided by the candidate |
-| `course_registration/*.py` | Generated | Status model (DROPPED vs WITHDRAWN), single prerequisite, skip-and-remove with record |
-| `tests/*.py` | Generated | Coverage list from AC6; concurrency test fixed after deliberately breaking the code |
-| `README.md`, `docs/AI_USAGE.md` | Drafted | _[candidate review]_ |
-
 ## Interaction 4 – "Enroll only once" review
 **Prompt (summary):** Candidate asked how the "a learner may enroll only once" requirement is
 handled, and which use cases were considered.
@@ -126,3 +107,94 @@ test: a promoted learner calling enroll again, and repeated withdraw/re-join cyc
 **Accepted:** added `test_promoted_learner_enrolling_again_is_duplicate` and
 `test_repeated_withdraw_and_rejoin_never_duplicates_records`. Suite: `90 passed`. No production
 code changed.
+
+## Interactions 5–13 – Design review, v1.1 → v1.9 (design only, no code)
+After the v1.0 implementation, the candidate asked to **change only the design until it was
+final** ("do changes only to the DESIGN first; once we finalise DESIGN we will go ahead for
+development"). Code changes the AI had already started for v1.1 were reverted before commit.
+Each row below is one decision.
+
+| Ver. | Candidate prompt (summary) | AI suggestion / response | Decision |
+|------|----------------------------|--------------------------|----------|
+| 1.1 | "Enroll only once" means no duplicate active records; a learner who drops should be able to re-enroll through the normal flow | Implemented the change across code and docs, then reverted the code when told "design first" | **Edited:** reverses the candidate's own v1.0 rule (DROPPED blocked); design-only |
+| — | "Should a learner be allowed to re-enroll after dropping; does this comply with the ACs?" | Mapped the problem statement and ACs 2–6; no AC forbids re-enrolling; AC 2 makes "only once" testable as "no duplicate records". Flagged the risk of a "once ever" reading | **Accepted:** keep re-enrollment; document the interpretation |
+| 1.2 | Asked whether to skip and retain or skip and remove; preferred retain "as eligibility is checked already" | Agreed retain is valid and fairer. **Corrected the reasoning:** the earlier check doesn't decide the question; what matters is whether lapsed eligibility should cost a learner their place. Listed the extra rules retain needs | **Accepted:** skip and retain; `REMOVED` state deleted |
+| — | "An ineligibility factor at promotion shouldn't make the learner lose their position, right?" | Confirmed, with the limit that AC 3/4 still forbid *promoting* them while ineligible; worked example | **Accepted** |
+| 1.3 | Listed the three eligibility check points; asked to check the design against ACs and limitations | Added check points C1–C3, AC traceability, scope compliance, test plan and limitations sections | **Accepted** |
+| 1.4 | Restated "enroll only once": never enrolled *and* waitlisted, no new request while active; re-enroll after drop or withdraw | Wrote rules R1–R4; recorded "once ever" as the rejected alternative | **Accepted** |
+| 1.5 | Store a REJECTED status; promote automatically whenever a seat is empty; retained learners stay in FIFO order | Implemented in design, including promotion on eligibility changes (directory notifications) | **Accepted at first, later revised** (v1.6, v1.7) |
+| — | "Clarify what 'same waitlist position' means" | Defined it as relative FIFO order: the displayed number can only go down; a skip never moves anyone back | **Accepted;** candidate restated it with an A/B/C/D example, which was added to §8.1 |
+| 1.6 | "Keep prerequisite data stable; promotion-time validation is a safeguard. Ignore automatic promotion on eligibility changes" | Removed directory notifications; added assumption A11; promotion only after a drop (P1) and before seating a newcomer (P2) | **Edited:** rejects the AI's v1.5 event-driven mechanism |
+| 1.7 | "Storing REJECTED is not necessary, as re-enrollment is allowed and eligibility re-checked" | Removed the stored status; REJECTED is an outcome only; rejections are pure no-ops again | **Edited:** reverses v1.5 O1 |
+| 1.8 | "Eligible waitlisted learners always have priority over new requests; retained ineligible learners must not block a new eligible learner" | Showed both rules were already implied (P2, T8); made them explicit as SP1/SP2 with a FIFO explanation and invariant 8 | **Accepted** |
+| 1.9 | "Re-analyse the design against the document" | AI review found: a **contradiction the AI had introduced** (the `ALREADY_WAITLISTED` message would need an eligibility check outside the three agreed points); stale references; misleading examples; incomplete T13; the AC 4 vs A7 interpretation risk; and the AI record not yet updated | **Accepted** fixes; the candidate then decided AC 4 vs A7: **no eligibility checks for already-enrolled learners**. Use cases UC1–UC13 added |
+
+## Interaction 14 – Implementation of design v1.9
+**Prompt (summary):** "Go ahead and implement; commit the files as well."
+
+**AI output:**
+- `offering.py` rewritten to v1.9:
+  - duplicate check before the prerequisite check;
+  - stateless `REJECTED`;
+  - one FIFO promotion routine with skip-and-retain;
+  - promotion triggers P1 (drop) and P2 (before seating a newcomer).
+- `models.py`: four statuses; `REMOVED`, `PREVIOUSLY_*` and `RemovalRecord` deleted; new
+  `Result.skipped`.
+- Tests reorganised by test-plan ID (T1–T13): `test_enrollment.py`, `test_promotion.py`,
+  `test_seat_priority.py`, `test_reenrollment.py`. The invariant checker now also covers
+  invariants 3, 7 and 8. The random-sequence test checks AC 4 directly: nobody is newly seated
+  unless eligible.
+- Demo script rewritten around the v1.9 story; README updated.
+
+**Verification:**
+1. `pytest -q` → **111 passed**, on 3 consecutive runs.
+2. **CLI defect found by the demo smoke test:** comment lines were parsed before being skipped,
+   so an apostrophe in a comment crashed the shell. **Fixed** by skipping comments before parsing.
+3. **Deliberately broke the code 13 ways** (scripted, then restored; restored file verified
+   byte-identical):
+
+   | # | Bug introduced | Caught? |
+   |---|----------------|---------|
+   | 1 | Skip-and-**remove** instead of retain | yes |
+   | 2 | No eligibility re-check at promotion | yes |
+   | 3 | No P2: newcomer seated ahead of the waitlist (breaks SP1) | yes |
+   | 4 | Newcomer waitlisted whenever anyone waits (breaks SP2) | yes |
+   | 5 | Prerequisite check before duplicate check (breaks R3) | yes |
+   | 6 | REJECTED stores a status | yes |
+   | 7 | Waitlist scanned last-in-first-out | yes |
+   | 8 | Promotion seats at most one learner per pass | **no, survived** → fixed |
+   | 9 | Capacity check off by one | yes |
+   | 10 | Promotion runs on `leave_waitlist` | **no, survived** → fixed |
+   | 11 | Dropped learner blocked from re-enrolling | yes |
+   | 12 | Lock removed from `enroll` | yes |
+   | 13 | Lock removed from `drop` | yes |
+
+4. **Gaps found in the AI's own tests (from the two survivors):**
+   - #8: no test needed one pass to fill two vacancies. **Added**
+     `test_single_pass_fills_every_vacancy_before_newcomer`.
+   - #10: the leave-waitlist test had no vacant seat, so a stray promotion had no effect.
+     **Rewritten** with a vacant seat and an eligible waiting learner.
+   - Both survivors are now caught.
+5. Demo output checked line by line against DESIGN.md §2.3 use cases (UC1–UC3, UC7, UC10, UC11,
+   UC12).
+
+## Files informed by AI
+| File | AI contribution | Human decision points |
+|------|-----------------|-----------------------|
+| `docs/DESIGN.md` | Drafted and revised (v0.1 → v1.9) | Every policy row (A1–A11), R1–R4, SP1/SP2, check points, the stable-data assumption; the decisions to remove event-driven promotion and the stored REJECTED status |
+| `docs/DESIGN_REVIEW_CHECKLIST.md` | Drafted | Ticked and changed by candidate decisions |
+| `course_registration/*.py` | Generated | Behaviour fully specified by the candidate-approved design |
+| `tests/*.py` | Generated | Coverage from AC 6 and test plan §13; strengthened after deliberately breaking the code |
+| `README.md`, `docs/AI_USAGE.md` | Drafted | _[candidate review]_ |
+
+## Candidate's independent review _[candidate to complete]_
+- [ ] Read `course_registration/offering.py` end to end against DESIGN.md §2, §8 and §2.3.
+- [ ] Run `pytest -q` yourself and paste the output below.
+- [ ] Introduce at least one defect of your own and confirm a test fails.
+- [ ] Run the demo and check it against the use-case table.
+- [ ] Note anything you changed or rejected from the generated code.
+
+```
+<paste your pytest output here>
+```
+
