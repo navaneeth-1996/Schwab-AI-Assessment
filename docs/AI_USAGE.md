@@ -228,9 +228,13 @@ missing."
 mentioned the removed `promote_waitlist()`; the A7 confirmation, A11, R1–R4 and SP1/SP2 were
 missing. Rewritten to the final v1.9 decisions. README now states the tested Python versions.
 
-**Still open (outside the AI's remit):** the candidate's own review section below, and the
-rubric file `Course-Registration-Rubric-Score.md` referenced by the assessment, which was not
-supplied.
+**Still open (outside the AI's remit):** the candidate's own review section below.
+
+**Rubric:** the scorecard referenced by the assessment (`Course-Registration-Rubric-Score.md`)
+was not accessible to the candidate. The work was therefore checked against the priorities the
+assessment states itself: correct capacity and queue behaviour, focused tests, understandable
+changes, evidence of independent review, and candour about AI use. No rubric-based self-score
+is claimed.
 
 ## Files informed by AI
 | File | AI contribution | Human decision points |
