@@ -69,3 +69,12 @@ def test_enrolled_learner_keeps_seat_if_prereq_later_revoked(make_offering, dire
     directory.revoke_completion("a", "CS101")
     assert o.snapshot().statuses["a"] is LearnerStatus.ENROLLED
     assert o.enroll("a").outcome is Outcome.ALREADY_ENROLLED
+
+
+def test_promoted_learner_enrolling_again_is_duplicate(make_offering):
+    o = make_offering(capacity=1, eligible=["a", "b"])
+    o.enroll("a"); o.enroll("b")
+    assert o.drop("a").promoted == ("b",)
+    before = o.snapshot()
+    assert o.enroll("b").outcome is Outcome.ALREADY_ENROLLED
+    assert o.snapshot() == before

@@ -68,3 +68,13 @@ def test_leave_waitlist_by_enrolled_or_unknown_status_learner(make_offering, dir
     assert o.leave_waitlist("a").outcome is Outcome.NOT_WAITLISTED   # enrolled
     assert o.leave_waitlist("z").outcome is Outcome.NOT_WAITLISTED   # never interacted
     assert o.snapshot() == before
+
+
+def test_repeated_withdraw_and_rejoin_never_duplicates_records(make_offering):
+    o = _full(make_offering)                      # a enrolled; b, c, d waitlisted
+    for _ in range(5):
+        assert o.leave_waitlist("b").outcome is Outcome.WITHDRAWN
+        assert o.enroll("b").outcome is Outcome.WAITLISTED
+        assert_invariants(o)
+    s = o.snapshot()
+    assert s.waitlist == ("c", "d", "b") and s.waitlist.count("b") == 1
