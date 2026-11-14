@@ -238,9 +238,10 @@ waiting learner was ineligible at the last promotion (invariant 3). So "eligible
   `snapshot()` also takes the lock.
 - **Lock ordering:** offering lock → directory lock only. The directory never calls the
   offering, so deadlock is impossible.
-- Concurrency tests use a `SlowDirectory` that sleeps inside the eligibility check to widen the
-  race window. Without it, deleting the lock still passed the tests under CPython's GIL (found
-  by deliberately breaking the code; see `docs/AI_USAGE.md`).
+- Concurrency tests use a `SlowDirectory` that sleeps inside `has_completed` and `exists` to
+  widen the read-then-write windows. Without it, deleting the lock still passed the tests under
+  CPython's GIL (found by deliberately breaking the code; see `docs/AI_USAGE.md`). With it,
+  removing the lock from `enroll`, `drop` or `leave_waitlist` fails the tests in 10 of 10 runs.
 
 ## 10. Tradeoffs
 | Choice | Alternative | Why |
@@ -281,7 +282,7 @@ waiting learner was ineligible at the last promotion (invariant 3). So "eligible
 | Prioritise correct capacity/queue behaviour over feature count | ✅ Invariants 1–8 asserted throughout; no extra infrastructure (no event plumbing, no public promotion API) |
 | No credentials or sensitive data in prompts/records | ✅ Fictional learner IDs only |
 | Design spec covers boundary, data/API, invariants, promotion rule, concurrency/persistence, assumptions/tradeoffs | ✅ §2–§10 |
-| Runnable code, focused tests, setup/run instructions, limitations summary | ✅ `course_registration/`, `tests/` (111 tests), `README.md`, §14 |
+| Runnable code, focused tests, setup/run instructions, limitations summary | ✅ `course_registration/`, `tests/` (114 tests), `README.md`, §14 |
 
 ## 13. Test plan (implemented; see README for the file mapping)
 | # | Scenario | AC |
@@ -299,7 +300,7 @@ waiting learner was ineligible at the last promotion (invariant 3). So "eligible
 | T10 | Repeated drop → `ALREADY_DROPPED`; drop of a waitlisted, withdrawn or never-enrolled learner → `NOT_ENROLLED`; no extra promotion | 5 |
 | T11 | Malformed or unknown learner IDs on every operation → `INVALID_REQUEST`, no status recorded; invalid construction raises `ValueError` | 5 |
 | T12 | Record changes trigger no promotion on their own; `leave_waitlist` triggers no promotion; a rejected enroll never triggers P2; an enrolled learner whose record is revoked keeps the seat and can still drop normally (UC4, UC6) | 3, 4, 5 |
-| T13 | Concurrency: parallel enrolls never exceed capacity; parallel duplicate enrolls create one record; parallel repeated drops promote exactly once; mixed parallel drops and enrolls keep invariants; a widened race window proves that removing the lock makes these tests fail. Seeded random sequences check invariants 1–8 after each step | 6 |
+| T13 | Concurrency: parallel enrolls never exceed capacity; parallel duplicate enrolls create one record; parallel repeated drops promote exactly once; mixed parallel drops and enrolls keep invariants; a drop racing a withdrawal of the learner it would promote resolves to exactly one outcome; concurrent drops and newcomers respect skip-and-retain and SP1; concurrent withdraw/re-join of one learner never duplicates; widened race windows proves that removing the lock makes these tests fail. Seeded random sequences check invariants 1–8 after each step | 6 |
 
 ## 14. Limitations and follow-up risks
 - **In-memory, single process.** State is lost on restart, and the lock doesn't protect multiple

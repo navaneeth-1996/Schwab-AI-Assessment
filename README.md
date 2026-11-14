@@ -47,7 +47,7 @@ pip install -r requirements-dev.txt
 ```bash
 pytest -q
 ```
-Expected: `111 passed`.
+Expected: `114 passed`.
 
 ## Run the demo
 ```bash
@@ -89,7 +89,7 @@ tests/
   test_seat_priority.py          T8, T8b: SP1 / SP2
   test_reenrollment.py           T9: re-enroll after drop / withdraw
   test_invalid_requests.py       T11: malformed or unknown IDs, bad configuration
-  test_concurrency.py            T13: parallel enroll/drop with a widened race window
+  test_concurrency.py            T13: parallel enroll/drop/leave_waitlist with widened race windows
   test_randomized_invariants.py  T13: 30 seeded random sequences, invariants after every step
   test_cli.py                    demo script smoke test
 ```

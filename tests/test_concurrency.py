@@ -9,25 +9,36 @@ from tests.conftest import COURSE, PREREQ, assert_invariants
 
 
 class SlowDirectory(LearnerDirectory):
-    """Yields inside the eligibility check to widen the read-then-write window.
+    """Yields inside directory reads to widen the read-then-write windows in the service.
 
-    Without this, CPython's GIL makes races rare enough that a missing lock in the
-    service can pass these tests (verified by deleting the lock: tests still passed).
+    Without this, CPython's GIL makes races rare enough that a missing lock can pass these
+    tests. Verified by deliberately deleting the lock: first from enroll/drop (they passed until
+    `has_completed` was slowed), then from leave_waitlist (it passed until `exists`, which every
+    operation calls during validation, was slowed too).
     """
 
     def has_completed(self, learner_id, course_id):
         time.sleep(0.001)
         return super().has_completed(learner_id, course_id)
 
+    def exists(self, learner_id):
+        time.sleep(0.0005)
+        return super().exists(learner_id)
+
 
 @pytest.fixture
-def make_offering():
-    directory = SlowDirectory()
+def slow_directory():
+    return SlowDirectory()
 
-    def _make(capacity=2, eligible=()):
+
+@pytest.fixture
+def make_offering(slow_directory):
+    def _make(capacity=2, eligible=(), ineligible=()):
         for lid in eligible:
-            directory.register(lid, {PREREQ})
-        return CourseOffering(COURSE, capacity, PREREQ, directory)
+            slow_directory.register(lid, {PREREQ})
+        for lid in ineligible:
+            slow_directory.register(lid, set())
+        return CourseOffering(COURSE, capacity, PREREQ, slow_directory)
 
     return _make
 
@@ -90,3 +101,62 @@ def test_mixed_concurrent_drops_and_enrolls_preserve_invariants(make_offering):
     assert set(snap.enrolled) <= set(newcomers)
     assert len(snap.waitlist) == 20
     assert_invariants(o)
+
+
+# ---------------------------------------------------------------- v1.9 behaviour under concurrency
+
+
+def test_concurrent_drop_and_leave_waitlist_resolve_to_exactly_one_outcome(make_offering):
+    """A drop promoting B races B leaving the waitlist: B ends up enrolled XOR withdrawn.
+
+    The withdrawal is delayed slightly so that, without the lock, it lands while the drop's
+    promotion is checking B's eligibility (inside SlowDirectory.has_completed). That is the
+    window where an unlocked implementation would delete B from the waitlist under promotion.
+    """
+
+    def late_leave(o, lid):
+        time.sleep(0.0007)
+        return o.leave_waitlist(lid)
+
+    for i in range(40):
+        o = make_offering(capacity=1, eligible=[f"a{i}", f"b{i}"])
+        o.enroll(f"a{i}"); o.enroll(f"b{i}")
+        drop_r, leave_r = _run_concurrently([lambda: o.drop(f"a{i}"), lambda: late_leave(o, f"b{i}")])
+        promoted = f"b{i}" in drop_r.promoted
+        withdrawn = leave_r.outcome is Outcome.WITHDRAWN
+        assert promoted != withdrawn, (drop_r, leave_r)
+        s = o.snapshot()
+        assert s.waitlist == ()
+        assert s.enrolled == ((f"b{i}",) if promoted else ())
+        assert_invariants(o)
+
+
+def test_concurrent_drops_and_newcomers_respect_skip_retain_and_sp1(make_offering, slow_directory):
+    """Retained A stays first; eligible waitlisted B and C beat every concurrent newcomer (SP1)."""
+    seated = ["s0", "s1", "s2"]
+    newcomers = [f"N{i}" for i in range(8)]
+    o = make_offering(capacity=3, eligible=seated + ["A", "B", "C"] + newcomers)
+    for lid in seated + ["A", "B", "C"]:
+        o.enroll(lid)
+    slow_directory.revoke_completion("A", PREREQ)      # A will be skipped and retained
+
+    fns = [lambda: o.drop("s0"), lambda: o.drop("s1")] + [lambda n=n: o.enroll(n) for n in newcomers]
+    _run_concurrently(fns, workers=len(fns))
+
+    s = o.snapshot()
+    assert set(s.enrolled) == {"s2", "B", "C"}          # the two freed seats went to the waitlist
+    assert s.waitlist[0] == "A"                         # retained at the front
+    assert set(s.waitlist[1:]) == set(newcomers)        # every newcomer queued behind A
+    assert_invariants(o, slow_directory)
+
+
+def test_concurrent_withdraw_and_rejoin_of_same_learner_never_duplicates(make_offering):
+    o = make_offering(capacity=1, eligible=["a", "b", "c"])
+    o.enroll("a"); o.enroll("b"); o.enroll("c")
+    fns = [(lambda: o.leave_waitlist("b")) if i % 2 == 0 else (lambda: o.enroll("b")) for i in range(30)]
+    _run_concurrently(fns, workers=30)
+    s = o.snapshot()
+    assert s.waitlist.count("b") <= 1
+    assert s.enrolled == ("a",)
+    assert_invariants(o)
+

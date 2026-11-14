@@ -178,6 +178,39 @@ Each row below is one decision.
 5. Demo output checked line by line against DESIGN.md §2.3 use cases (UC1–UC3, UC7, UC10, UC11,
    UC12).
 
+## Interaction 15 – Concurrent requests with a threading lock
+**Prompt (summary):** "Handle the concurrent requests using threading lock."
+
+**AI response (summary):**
+- Confirmed the lock was already in place: one `threading.Lock` per `CourseOffering`, held by
+  `enroll`, `drop`, `leave_waitlist` and `snapshot`, including any promotion they trigger.
+  Lock order is offering → directory only.
+- Checked whether the tests actually enforce it, by deleting each lock in turn. **Finding:**
+  removing the lock from `leave_waitlist` still passed all 111 tests. Nothing ran
+  `leave_waitlist` concurrently, and the race-widening sleep only covered the eligibility check,
+  which `leave_waitlist` never calls.
+- No production change was needed; the gap was in the tests.
+
+**Changes (tests only):**
+- `SlowDirectory` also sleeps in `exists` (called by every operation during validation).
+- Three new concurrency tests for v1.9 behaviour:
+  - a drop racing a withdrawal of the learner it would promote (exactly one outcome);
+  - concurrent drops and newcomers with a retained ineligible learner (skip-and-retain plus SP1);
+  - concurrent withdraw/re-join of one learner (no duplicates).
+- **Edited after the first attempt:** the drop/withdraw race test caught a missing
+  `leave_waitlist` lock in only 2 of 5 runs, too timing-dependent to rely on. The withdrawal is
+  now delayed to land inside the promotion's eligibility check.
+
+**Verification:**
+| Lock removed from | Caught (concurrency tests, repeated runs) |
+|-------------------|-------------------------------------------|
+| `enroll` | 10/10 |
+| `drop` | 10/10 |
+| `leave_waitlist` | 10/10 (was 0/5 before this change, then 2/5 on the first attempt) |
+
+Real code: full suite `114 passed` in 10/10 consecutive runs; restored `offering.py` verified
+byte-identical.
+
 ## Files informed by AI
 | File | AI contribution | Human decision points |
 |------|-----------------|-----------------------|
