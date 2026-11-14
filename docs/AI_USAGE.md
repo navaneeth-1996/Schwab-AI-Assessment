@@ -314,7 +314,7 @@ ineligible learners), run `pytest -q`, confirm a failure, then undo the change w
 - [ ] Read `course_registration/offering.py` end to end against DESIGN.md §2, §8 and §2.3.
 - [x] Run `pytest -q` yourself and paste the output below.
 - [ ] Introduce at least one defect of your own and confirm a test fails.
-- [ ] Run the demo and check it against the use-case table.
+- [x] Run the demo and check it against the use-case table (run with an injected defect; see below).
 - [ ] Note anything you changed or rejected from the generated code.
 
 `pytest -q` from `Schwab-AI-Assessment`, 14 Nov 2026:
@@ -325,7 +325,24 @@ ineligible learners), run `pytest -q`, confirm a failure, then undo the change w
 114 passed in 0.77s
 ```
 
-**Defect introduced and result:** _[candidate]_
+**Defect introduced and result:**
+The dropped-learner check in `enroll` (R4) was disabled, and the demo was re-run:
+`python -m course_registration.cli --capacity 1 < examples/demo.txt`. The output differed from
+the correct run in exactly the places R4 governs; everything else (rejection, skip-and-retain,
+the corrected learner's promotion, withdraw and re-join) was unchanged:
+
+| Demo step | Expected | Observed with the defect |
+|-----------|----------|--------------------------|
+| `enroll amy` (amy dropped earlier) | `PREVIOUSLY_DROPPED` | `WAITLISTED: Course full; waitlisted at position 2.` |
+| `drop amy` | `ALREADY_DROPPED` | `NOT_ENROLLED: Learner is not enrolled. Use leave_waitlist to leave the waitlist.` |
+| Final waitlist | `['dan']` | `['amy', 'dan']` |
+| amy's final status | `DROPPED` | `WAITLISTED` |
+
+Conclusion: the defect lets a dropped learner enroll a second time, which breaks the
+"enroll only once" rule (R4), and it is visible in the demo. _[candidate: add the result of
+running `pytest -q` with the defect in place; `test_cli.py` and the `PREVIOUSLY_DROPPED` tests
+in `test_reenrollment.py` are expected to fail. Then restore with
+`git checkout course_registration/offering.py`.]_
 
 **Changes made or rejected after review:** _[candidate]_
 
