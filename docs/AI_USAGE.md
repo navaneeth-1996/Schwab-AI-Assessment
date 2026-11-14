@@ -313,7 +313,7 @@ ineligible learners), run `pytest -q`, confirm a failure, then undo the change w
 ### Review checklist
 - [ ] Read `course_registration/offering.py` end to end against DESIGN.md §2, §8 and §2.3.
 - [x] Run `pytest -q` yourself and paste the output below.
-- [ ] Introduce at least one defect of your own and confirm a test fails.
+- [x] Introduce at least one defect of your own and confirm a test fails.
 - [x] Run the demo and check it against the use-case table (run with an injected defect; see below).
 - [ ] Note anything you changed or rejected from the generated code.
 
@@ -339,10 +339,26 @@ the corrected learner's promotion, withdraw and re-join) was unchanged:
 | amy's final status | `DROPPED` | `WAITLISTED` |
 
 Conclusion: the defect lets a dropped learner enroll a second time, which breaks the
-"enroll only once" rule (R4), and it is visible in the demo. _[candidate: add the result of
-running `pytest -q` with the defect in place; `test_cli.py` and the `PREVIOUSLY_DROPPED` tests
-in `test_reenrollment.py` are expected to fail. Then restore with
-`git checkout course_registration/offering.py`.]_
+"enroll only once" rule (R4), and it is visible in the demo.
+
+`pytest -q` with the defect in place: **36 failed, 78 passed**. Every failure traces to R4:
+
+| Test file | Failed | What it caught |
+|-----------|--------|----------------|
+| `test_reenrollment.py` | 5 of 5 `PREVIOUSLY_DROPPED` tests | Dropped learners got `ENROLLED` / `WAITLISTED` instead of `PREVIOUSLY_DROPPED`. `test_previously_dropped_runs_no_eligibility_check` got `REJECTED`, showing the learner reached the eligibility check that R4 must skip. |
+| `test_randomized_invariants.py` | 30 of 30 seeds | Every random sequence hit a dropped learner re-enrolling |
+| `test_cli.py` | 1 | The demo no longer printed `PREVIOUSLY_DROPPED` |
+
+Excerpt:
+```
+E   AssertionError: assert <Outcome.REJECTED: 'REJECTED'> is <Outcome.PREVIOUSLY_DROPPED: 'PREVIOUSLY_DROPPED'>
+tests/test_reenrollment.py:46: AssertionError
+...
+36 failed, 78 passed in 0.95s
+```
+The 78 passing tests cover unrelated rules (capacity, FIFO, skip-and-retain, seat priority,
+concurrency), as expected. The defect was then reverted with
+`git checkout course_registration/offering.py`.
 
 **Changes made or rejected after review:** _[candidate]_
 
