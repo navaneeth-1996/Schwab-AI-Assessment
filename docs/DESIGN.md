@@ -1,6 +1,6 @@
-# Course Waitlist – Design Specification (v1.6)
+# Course Waitlist – Design Specification (v1.7)
 
-> **Status: v1.6 – all open items resolved; ready for sign-off. Not yet implemented** (the code
+> **Status: v1.7 – all open items resolved; ready for sign-off. Not yet implemented** (the code
 > still implements v1.0).
 >
 > Changes from v1.0:
@@ -27,6 +27,10 @@
 >     offerings.
 >   - Promotion triggers are now P1 (after a drop) and P2 (before seating a newcomer).
 >   - §8.1 now defines "same waitlist position" with a worked example.
+> - **v1.7 – O1 revised:** a failed prerequisite check returns the `REJECTED` outcome and message
+>   only; **no `REJECTED` status is stored** (it adds nothing, because re-enrollment is allowed and
+>   eligibility is re-checked on every attempt). Back to four statuses; every rejection is again a
+>   pure no-op.
 
 ## 1. Scope
 One course offering. Operations: **enroll**, **drop** (enrolled learner), **leave waitlist**
@@ -40,7 +44,7 @@ persistence/database, identity, payments, multi-term, configurable policy engine
 | # | Topic | Decision | Source |
 |---|-------|----------|--------|
 | A1 | Prerequisite rule | The offering has exactly **one prerequisite course ID**. A learner is eligible iff their completed-courses record contains it. | Candidate decision |
-| A2 | Ineligible at enroll | **Rejected.** Returns outcome `REJECTED` with a message naming the missing prerequisite, and sets the learner's status to `REJECTED`. The learner is not enrolled or waitlisted, and seats and the waitlist are untouched. A REJECTED learner may enroll again later; if now eligible, they follow the normal flow. | Candidate decision (v1.5) |
+| A2 | Ineligible at enroll | **Rejected.** Returns outcome `REJECTED` with a message naming the missing prerequisite. **Nothing is stored:** the learner's status (none, `DROPPED` or `WITHDRAWN`), seats and waitlist are unchanged. The learner may try again at any time; eligibility is re-checked on every attempt. | Candidate decision (v1.7) |
 | A3 | Ineligible when reached during promotion | **Skip and retain.** The learner is not promoted (AC 4), keeps their exact FIFO position, and is re-checked at every later promotion. Once eligible, they are first in line for the next seat. | Candidate decision (v1.2) |
 | A4 | ~~Re-enroll after removal~~ | **No longer applies.** The system never removes learners from the waitlist. | Removed in v1.2 |
 | A5 | Re-enroll after drop | A `DROPPED` learner **may enroll again** through the normal flow (§2.2). | Candidate decision (v1.1) |
@@ -58,8 +62,8 @@ The statement prohibits **duplicate records**, not re-enrollment.
 |------|---------|
 | R1 | A learner who is `ENROLLED` is never also `WAITLISTED`. |
 | R2 | A learner who is `WAITLISTED` is never also `ENROLLED`. |
-| R3 | While a learner is `ENROLLED` or `WAITLISTED` (active), any new enroll request is rejected as a duplicate (`ALREADY_ENROLLED` / `ALREADY_WAITLISTED`) and changes nothing. This duplicate check runs **before** the prerequisite check, so an active learner is never marked `REJECTED`. |
-| R4 | A learner who is `DROPPED`, `WITHDRAWN` or `REJECTED` is inactive, and **may enroll again** through the same flow as a first-time learner (§2.2). |
+| R3 | While a learner is `ENROLLED` or `WAITLISTED` (active), any new enroll request is rejected as a duplicate (`ALREADY_ENROLLED` / `ALREADY_WAITLISTED`) and changes nothing. This duplicate check runs **before** the prerequisite check, so an active learner always gets the duplicate result, never `REJECTED`. |
+| R4 | A learner who is `DROPPED` or `WITHDRAWN` is inactive, and **may enroll again** through the same flow as a first-time learner (§2.2). A learner whose request was `REJECTED` simply has no new record, and may also try again. |
 
 R1–R3 are guaranteed by storing exactly one status per learner (§6), and are asserted by
 invariants 2 and 6. No state permanently blocks re-enrollment.
@@ -69,8 +73,8 @@ The prerequisite is checked at **every** point where a learner gains a place:
 
 | # | Check point | If eligible | If not eligible |
 |---|-------------|-------------|-----------------|
-| C1 | `enroll`, seat free | `ENROLLED` | `REJECTED` (outcome and status); seats and waitlist unchanged |
-| C2 | `enroll`, course full (moving to the waitlist) | `WAITLISTED`, back of queue | `REJECTED` (outcome and status); seats and waitlist unchanged |
+| C1 | `enroll`, seat free | `ENROLLED` | `REJECTED` outcome; no state change |
+| C2 | `enroll`, course full (moving to the waitlist) | `WAITLISTED`, back of queue | `REJECTED` outcome; no state change |
 | C3 | Promotion, waitlist → enrolled | `ENROLLED` | **Skipped and retained**: stays `WAITLISTED` at the same position; re-checked at the next promotion |
 
 C1 and C2 are one check, made in `enroll` *before* the seat-or-waitlist decision. So no
@@ -86,14 +90,14 @@ learner is not promoted. Skip and retain means that a records change can block a
 but **never costs the learner their position**.
 
 ## 3. Learner state model
-Five statuses: `ENROLLED`, `WAITLISTED` (active); `DROPPED`, `WITHDRAWN`, `REJECTED` (inactive).
+Four statuses: `ENROLLED`, `WAITLISTED` (active); `DROPPED`, `WITHDRAWN` (inactive).
 None is terminal.
 
 | From | Event | To |
 |------|-------|----|
-| none / DROPPED / WITHDRAWN / REJECTED | enroll, eligible, seat free | ENROLLED |
-| none / DROPPED / WITHDRAWN / REJECTED | enroll, eligible, course full | WAITLISTED (back of queue) |
-| none / DROPPED / WITHDRAWN / REJECTED | enroll, not eligible | REJECTED |
+| none / DROPPED / WITHDRAWN | enroll, eligible, seat free | ENROLLED |
+| none / DROPPED / WITHDRAWN | enroll, eligible, course full | WAITLISTED (back of queue) |
+| none / DROPPED / WITHDRAWN | enroll, not eligible | unchanged (`REJECTED` outcome) |
 | ENROLLED / WAITLISTED | enroll (any eligibility) | unchanged (`ALREADY_*`) |
 | WAITLISTED | leave_waitlist | WITHDRAWN |
 | WAITLISTED | promotion, eligible, seat free | ENROLLED |
@@ -126,9 +130,9 @@ Expected business outcomes are returned, not raised. `ValueError` is raised only
 offering configuration at construction time (capacity < 1, empty IDs, self-prerequisite), which
 is a programming error rather than a learner request.
 
-| Operation | Success (`ok=True`) | Not accepted (`ok=False`) |
+| Operation | Success (`ok=True`) | Not accepted (`ok=False`, state unchanged) |
 |-----------|---------------------|---------------------------|
-| enroll | `ENROLLED`, `WAITLISTED` | `REJECTED` (records the REJECTED status only), `ALREADY_ENROLLED`, `ALREADY_WAITLISTED`, `INVALID_REQUEST` |
+| enroll | `ENROLLED`, `WAITLISTED` | `REJECTED`, `ALREADY_ENROLLED`, `ALREADY_WAITLISTED`, `INVALID_REQUEST` |
 | drop | `DROPPED` | `ALREADY_DROPPED`, `NOT_ENROLLED`, `INVALID_REQUEST` |
 | leave_waitlist | `WITHDRAWN` | `NOT_WAITLISTED`, `INVALID_REQUEST` |
 
@@ -152,8 +156,8 @@ ineligible.
    were ineligible at the last promotion. If one of them later becomes eligible, the seat is
    filled at the next trigger (§8.2), not immediately (A11).
 4. The status map agrees exactly with the enrolled and waitlisted collections.
-5. **No rejected request changes seats or the waitlist.** `REJECTED` changes only that
-   learner's status. Every other not-accepted outcome leaves the snapshot identical.
+5. **Every not-accepted outcome** (`REJECTED`, `ALREADY_*`, `NOT_*`, `INVALID_REQUEST`) leaves the
+   snapshot identical to before the call.
 6. Enroll on an active learner never changes state (R3).
 7. **Promotion never reorders the waitlist:** learners who remain waiting keep their relative
    FIFO order.
@@ -222,7 +226,7 @@ react to changes in learner records (A11).
 |--------|-------------|-----|
 | "Enroll only once" = no duplicate active records; re-enroll after drop, withdraw or reject is allowed | "Once ever": block any learner who has ever enrolled | AC 2 defines the requirement as "duplicate enrollment requests do not create duplicate records", and no AC forbids re-enrolling. Re-enrollment can't jump the queue: a dropped seat goes to the waitlist first, and a re-enrolling learner joins the back if the course is full. **Cost:** a reviewer may hold the stricter reading; mitigated by explicit rules R1–R4. |
 | Skip and **retain** | Skip and remove | Fair to learners whose ineligibility is temporary; follows "earliest eligible" literally; no terminal state. **Cost:** ineligible learners can wait indefinitely (waitlist length overstates demand); each promotion scans past them (O(n)). |
-| Store `REJECTED` status | Return the outcome only | The learner's last outcome is visible in snapshots (audit, support queries). **Cost:** it overwrites any earlier `DROPPED`/`WITHDRAWN` status (no history), and adds a fifth status. |
+| Return `REJECTED` without storing a status | Store a `REJECTED` status on the learner | Re-enrollment is allowed and eligibility is re-checked on every attempt, so a stored rejection would never change behaviour. Keeping rejections stateless means every rejection is a pure no-op (invariant 5), and the model stays at four statuses. **Cost:** there's no record of failed attempts (an audit log would be the right tool if needed). |
 | Promotion on drop (P1) and before seating a newcomer (P2) only; prerequisite data assumed stable (A11) | Event-driven promotion when a learner's records change; or a public `promote_waitlist()` | Eligibility is evaluated only at the three agreed check points; there's no event plumbing between the records system and the offering; and the implementation stays small. **Cost:** if a skipped learner's record is corrected while a seat is empty, the seat stays empty until the next drop or eligible enroll. |
 | Return result values | Raise exceptions | Duplicate and invalid requests are expected traffic; callers branch on an enum. |
 | Coarse per-offering lock | Fine-grained or optimistic locking | One offering, small critical sections; correctness first. |
@@ -263,14 +267,14 @@ react to changes in learner records (A11).
 |---|----------|----|
 | T1 | Enroll with a free seat and the prerequisite met → `ENROLLED`; fill to exact capacity | 1 |
 | T2 | Course full → `WAITLISTED` in arrival order | 2 |
-| T3 | Duplicate enroll while enrolled / waitlisted / just promoted → `ALREADY_*`, no change, even if the learner is currently ineligible (never marked `REJECTED`); 40 concurrent duplicate enrolls → one record | 2, 6 |
-| T4 | Prerequisite not met at C1 and at C2 → `REJECTED` outcome and status; seats and waitlist unchanged; repeat → still `REJECTED`; after completing the prerequisite → normal flow | 1, 4, 5 |
+| T3 | Duplicate enroll while enrolled / waitlisted / just promoted → `ALREADY_*`, no change, even if the learner is currently ineligible; 40 concurrent duplicate enrolls → one record | 2, 6 |
+| T4 | Prerequisite not met at C1 and at C2 → `REJECTED` outcome; snapshot identical (no status recorded, seats and waitlist unchanged); after completing the prerequisite → normal flow | 1, 4, 5 |
 | T5 | Drop promotes the earliest eligible learner; successive drops follow FIFO | 3 |
 | T6 | Skip and retain: an ineligible head is skipped, the next eligible learner is promoted, and the skipped learner keeps position 1 | 3, 4 |
 | T7 | A retained learner's record is corrected (safeguard path): (a) while full → promoted at the next drop, ahead of later joiners; (b) while a seat is empty → **not** promoted immediately; promoted when the next eligible newcomer enrolls (P2), and the newcomer is waitlisted behind them | 3, 4 |
 | T8 | Only ineligible learners waiting → seat stays empty; an eligible newcomer gets it directly | 1, 4 |
-| T9 | Re-enroll after drop, withdraw or reject: seat if free, back of queue if full, `REJECTED` if not eligible; repeated cycles never duplicate | 2 |
-| T10 | Repeated drop → `ALREADY_DROPPED`; drop of a waitlisted, withdrawn, rejected or never-enrolled learner → `NOT_ENROLLED`; no extra promotion | 5 |
+| T9 | Re-enroll after drop or withdraw: seat if free, back of queue if full, `REJECTED` (state unchanged) if not eligible; repeated cycles never duplicate | 2 |
+| T10 | Repeated drop → `ALREADY_DROPPED`; drop of a waitlisted, withdrawn or never-enrolled learner → `NOT_ENROLLED`; no extra promotion | 5 |
 | T11 | Malformed or unknown learner IDs on every operation → `INVALID_REQUEST`, no status recorded; invalid construction raises `ValueError` | 5 |
 | T12 | Record changes trigger no promotion on their own; `leave_waitlist` triggers no promotion; a rejected enroll never triggers P2 | 3, 5 |
 | T13 | Concurrency: parallel enrolls never exceed capacity; parallel repeated drops promote once; seeded random sequences check invariants 1–7 after each step | 6 |
@@ -284,9 +288,9 @@ react to changes in learner records (A11).
 - **Prerequisite data is assumed stable (A11).** If a skipped learner's record is corrected while
   a seat is empty, the seat stays empty until the next drop or eligible enroll. If records change
   often in practice, event-driven promotion would be needed.
-- **No history.** Only the current status is stored: `REJECTED` overwrites an earlier `DROPPED`
-  or `WITHDRAWN`, there's no record of an earlier enrollment after drop → re-enroll, and skips
-  are reported in the `Result` but not stored.
+- **No history.** Only the current status is stored: there's no record of an earlier enrollment
+  after drop → re-enroll, failed (`REJECTED`) attempts are not recorded, and skips are reported in
+  the `Result` but not stored.
 - **"Enroll only once" interpretation.** The decided reading allows re-enrollment; a reviewer
   holding the "once ever" reading would see this differently (§10).
 - **No notifications** to promoted, skipped or rejected learners, and **no admin operations**
@@ -297,7 +301,7 @@ react to changes in learner records (A11).
 ## 15. Open items
 | # | Question | Resolution |
 |---|----------|------------|
-| O1 | Store a failed prerequisite check at enroll? | **Resolved (v1.5):** return `REJECTED` and store the `REJECTED` status (A2) |
+| O1 | Store a failed prerequisite check at enroll? | **Resolved (v1.7):** no. Return the `REJECTED` outcome and message only; no status stored (A2) |
 | O2 | Interpretation of "enroll only once" | **Resolved (v1.4):** no duplicate active records, R1–R4 (§2.1) |
 | O3 | How promotion is triggered | **Resolved (v1.6):** automatic on drop (P1) and before seating a newcomer (P2); no reaction to record changes; no public `promote_waitlist()` |
 | O4 | Should retained ineligible learners expire? | **Resolved (v1.5):** no; they keep their FIFO slot and are re-checked at every promotion |
