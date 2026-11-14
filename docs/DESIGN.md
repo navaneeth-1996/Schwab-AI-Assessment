@@ -22,7 +22,7 @@ persistence/database, identity, payments, multi-term, configurable policy engine
 | A4 | ~~Re-enroll after removal~~ | **No longer applies.** The system never removes learners from the waitlist. | Removed in v1.2 |
 | A5 | Re-enroll after drop | A `DROPPED` learner **may enroll again** through the normal flow (§2.2). | Candidate decision (v1.1) |
 | A6 | Leave waitlist | A waitlisted learner (eligible or not) may leave voluntarily → `WITHDRAWN`, and **may enroll again** through the normal flow, re-joining at the **back** of the queue (or getting a seat if one is free). | Candidate decision |
-| A7 | Enrolled learner loses prerequisite | Keeps the seat. Eligibility is evaluated only at the check points in §2.2. | Candidate decision |
+| A7 | Enrolled learner loses prerequisite | **Eligibility is never checked for already-enrolled learners.** An enrolled learner keeps their seat whatever happens to their records later. Eligibility is evaluated only at the three check points in §2.2 (new enrollment, moving to the waitlist, promotion). | Candidate decision (confirmed v1.9) |
 | A8 | Waitlist size | Unlimited. | Candidate decision |
 | A9 | `drop` vs `leave_waitlist` | Separate operations. `drop` on a waitlisted learner returns `NOT_ENROLLED` with a hint, instead of guessing intent. | Design choice |
 | A10 | Learner identity | Learner IDs must be non-empty strings known to the `LearnerDirectory`; anything else is `INVALID_REQUEST`, and no status is recorded. | Design choice |
@@ -53,14 +53,32 @@ The prerequisite is checked at **every** point where a learner gains a place:
 C1 and C2 are one check, made in `enroll` *before* the seat-or-waitlist decision. So no
 ineligible learner ever enters the waitlist.
 
-These are the **only** places eligibility is evaluated. The service does not react to
-record changes between them (A11).
+These are the **only** places eligibility is evaluated. It is **never** evaluated for an
+already-enrolled learner (A7), on a duplicate request, on `drop`, or on `leave_waitlist`. The
+service does not react to record changes between check points (A11).
 
 **Why C3 exists (safeguard).** Every waitlisted learner passed C2 when they joined, and
 prerequisite data is stable during normal operation (A11), so under normal conditions C3 always passes. C3 only fails if the learner's records change while they
 wait (a completion is revoked, corrected, or was posted in error). AC 4 requires that such a
 learner is not promoted. Skip and retain means that a records change can block a promotion,
 but **never costs the learner their position**.
+
+### 2.3 Eligibility decision use cases
+| # | Use case | Eligibility checked? | Outcome |
+|---|----------|----------------------|---------|
+| UC1 | New learner, prerequisite met, seat free | ✅ C1 | `ENROLLED` |
+| UC2 | New learner, prerequisite met, course full | ✅ C2 | `WAITLISTED` at the back |
+| UC3 | New learner, prerequisite not met (seat free or course full) | ✅ C1/C2 | `REJECTED`; nothing stored |
+| UC4 | Enrolled learner's prerequisite record is later revoked | ❌ never (A7) | Keeps the seat; nothing happens |
+| UC5 | Enrolled learner sends another enroll request | ❌ duplicate check only (R3) | `ALREADY_ENROLLED`; no change |
+| UC6 | Enrolled learner drops (eligible or not) | ❌ | `DROPPED`; the seat opens, and promotion (P1) checks the waitlisted learners |
+| UC7 | Waitlisted learner sends another enroll request | ❌ duplicate check only (R3) | `ALREADY_WAITLISTED` with position; no change |
+| UC8 | Waitlisted learner leaves the waitlist | ❌ | `WITHDRAWN`; no promotion |
+| UC9 | Seat opens; the learner at the front is eligible | ✅ C3 | Promoted to `ENROLLED` |
+| UC10 | Seat opens; the learner at the front has had their record revoked since joining | ✅ C3 (safeguard) | Skipped and retained at the same position; the next eligible learner is promoted |
+| UC11 | A skipped learner's record is corrected; the next seat opens | ✅ C3 | Promoted ahead of everyone who joined after them |
+| UC12 | Dropped or withdrawn learner enrolls again | ✅ C1/C2 (treated as new) | `ENROLLED`, `WAITLISTED` or `REJECTED`, exactly as UC1–UC3 |
+| UC13 | Eligible newcomer arrives while a seat is vacant and only ineligible learners wait | ✅ C1 for the newcomer, C3 for the waiting learners (P2) | Waiting learners are skipped and retained; the newcomer takes the seat (SP2) |
 
 ## 3. Learner state model
 Four statuses: `ENROLLED`, `WAITLISTED` (active); `DROPPED`, `WITHDRAWN` (inactive).
@@ -241,7 +259,7 @@ waiting learner was ineligible at the last promotion (invariant 3). So "eligible
 | 1 | Enrollment succeeds when capacity remains and the prerequisite is met | Check C1; a seat is assigned if one is still vacant after P2 (SP1). Ineligible waitlisted learners never block it (SP2) | §2.2, §8.2 |
 | 2 | When full, an eligible learner joins the waitlist **once**; duplicate requests create no duplicate records | Check C2; one status per learner; R1–R3; duplicate check precedes the prerequisite check | §2.1, §3, inv. 2, 6 |
 | 3 | Drop opens a seat and promotes the earliest **eligible** waitlisted learner per the documented policy | P1 after every successful drop; FIFO scan promotes the first eligible learner(s) | §8 |
-| 4 | An ineligible learner is not enrolled or promoted; the skip/retain policy is applied **consistently** | C1/C2 → `REJECTED`; C3 → skip and retain. A single promotion routine serves P1 and P2, so the policy is identical everywhere | §2.2, A2, A3, §8 |
+| 4 | An ineligible learner is not enrolled or promoted; the skip/retain policy is applied **consistently** | C1/C2 → `REJECTED`; C3 → skip and retain. A single promotion routine serves P1 and P2, so the policy is identical everywhere. AC 4 is applied at the moments a learner **gains a place** (new enrollment, moving to the waitlist, promotion). Already-enrolled learners are not re-evaluated (A7, A11; UC4) | §2.2, §2.3, A2, A3, A7, §8 |
 | 5 | Invalid requests and duplicate drops return clear results without corrupting enrollment, capacity or waitlist | `INVALID_REQUEST`, `ALREADY_DROPPED`, `NOT_ENROLLED`, `NOT_WAITLISTED`; no rejection touches seats or the waitlist | §5, inv. 5 |
 | 6 | Tests for capacity available/full, duplicates, FIFO promotion, prerequisite failure, invalid/repeated drops; concurrency where practical | Test plan T1–T13 | §13 |
 | 7 | Record AI prompts, responses, accept/edit/reject decisions, verification | `docs/AI_USAGE.md` (to be updated with the v1.1–v1.9 design decisions during development) | — |
@@ -281,7 +299,7 @@ waiting learner was ineligible at the last promotion (invariant 3). So "eligible
 | T9 | Re-enroll after drop or withdraw: seat if free, back of queue if full, `REJECTED` (state unchanged) if not eligible; repeated cycles never duplicate | 2 |
 | T10 | Repeated drop → `ALREADY_DROPPED`; drop of a waitlisted, withdrawn or never-enrolled learner → `NOT_ENROLLED`; no extra promotion | 5 |
 | T11 | Malformed or unknown learner IDs on every operation → `INVALID_REQUEST`, no status recorded; invalid construction raises `ValueError` | 5 |
-| T12 | Record changes trigger no promotion on their own; `leave_waitlist` triggers no promotion; a rejected enroll never triggers P2 | 3, 5 |
+| T12 | Record changes trigger no promotion on their own; `leave_waitlist` triggers no promotion; a rejected enroll never triggers P2; an enrolled learner whose record is revoked keeps the seat and can still drop normally (UC4, UC6) | 3, 4, 5 |
 | T13 | Concurrency: parallel enrolls never exceed capacity; parallel duplicate enrolls create one record; parallel repeated drops promote exactly once; mixed parallel drops and enrolls keep invariants; a widened race window proves that removing the lock makes these tests fail. Seeded random sequences check invariants 1–8 after each step | 6 |
 
 ## 14. Limitations and follow-up risks
