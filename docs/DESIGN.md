@@ -1,42 +1,13 @@
-# Course Waitlist – Design Specification (v1.8)
+# Course Waitlist – Design Specification (v1.9)
 
-> **Status: v1.8 – all open items resolved; ready for sign-off. Not yet implemented** (the code
-> still implements v1.0).
->
-> Changes from v1.0:
-> - **v1.1 – A5:** dropped learners may re-enroll through the normal flow (was: blocked).
-> - **v1.2 – A3:** an ineligible learner reached during promotion is **skipped and retained** at
->   the same waitlist position (was: skip and remove). The `REMOVED` state is deleted; A4 no
->   longer applies.
-> - **v1.3:** eligibility check points (§2.2); AC traceability, scope compliance, test plan and
->   limitations sections added.
-> - **v1.4:** "Enroll only once" = no duplicate active records (rules R1–R4, §2.1).
-> - **v1.5:**
->   - **O1:** a failed prerequisite check at enroll returns `REJECTED` *and* stores a `REJECTED`
->     status on the learner. REJECTED learners may enroll again once eligible.
->   - **O3:** promotion is **fully automatic** whenever a seat is empty. It runs after a drop, and
->     when a waitlisted learner becomes eligible while a seat is free. The public
->     `promote_waitlist()` is removed.
->   - **O4:** retained ineligible learners stay in their FIFO slot indefinitely and are re-checked
->     at every promotion. They never expire.
-> - **v1.6:**
->   - New assumption A11: **prerequisite data is stable during normal operation**; the
->     promotion-time check is a safeguard only.
->   - **Promotion on eligibility changes (v1.5 P2) removed.** Eligibility is checked only at
->     enroll, when moving to the waitlist, and at promotion. The directory no longer notifies
->     offerings.
->   - Promotion triggers are now P1 (after a drop) and P2 (before seating a newcomer).
->   - §8.1 now defines "same waitlist position" with a worked example.
-> - **v1.7 – O1 revised:** a failed prerequisite check returns the `REJECTED` outcome and message
->   only; **no `REJECTED` status is stored** (it adds nothing, because re-enrollment is allowed and
->   eligibility is re-checked on every attempt). Back to four statuses; every rejection is again a
->   pure no-op.
-> - **v1.8:** explicit seat-priority rules SP1/SP2 (§8.3) and invariant 8. These clarify existing
->   behaviour (P2 and T8); no policy change.
+> **Status: v1.9 – under review; not yet implemented** (the code still implements v1.0).
+> Revision history (v1.0 → v1.9) and the reasoning behind each decision will be recorded in
+> `docs/AI_USAGE.md` during implementation; until then, see the git history of this file.
 
 ## 1. Scope
 One course offering. Operations: **enroll**, **drop** (enrolled learner), **leave waitlist**
-(waitlisted learner), and automatic **FIFO waitlist promotion** whenever a seat is empty.
+(waitlisted learner), and automatic **FIFO waitlist promotion** when a seat opens, or before a
+newcomer is seated (§8.2).
 
 No starter project was supplied, so per the assessment's fallback this is a minimal Python
 service with an in-memory store plus a thin demo CLI. Out of scope: frontend, catalog,
@@ -139,8 +110,8 @@ is a programming error rather than a learner request.
 | leave_waitlist | `WITHDRAWN` | `NOT_WAITLISTED`, `INVALID_REQUEST` |
 
 Messages: `REJECTED` → "Rejected: prerequisite CS101 not completed." `ALREADY_WAITLISTED`
-includes the learner's position, and says whether they are currently being skipped as
-ineligible.
+includes the learner's current waitlist position. (It doesn't report eligibility: a duplicate
+request is not an eligibility check point, §2.2.)
 
 ## 6. Data model
 | Field | Type | Notes |
@@ -231,13 +202,16 @@ seat the first eligible candidate(s), skipping (and retaining) ineligible waitli
 Eligible waitlisted learners are always ahead of the newcomer (SP1). Ineligible ones are skipped
 exactly as they are on a drop (SP2). The newcomer, if not seated, takes the last FIFO slot.
 
-Examples (capacity 2, one seat vacant):
+Examples (capacity 2, one seat vacant). A seat can only be vacant while learners wait if every
+waiting learner was ineligible at the last promotion (invariant 3). So "eligible" below means
+*skipped earlier, record since corrected* (the A11 safeguard case).
+
 | Waitlist | Newcomer N (eligible) | Result |
 |----------|-----------------------|--------|
-| A (eligible) | N enrolls | A is promoted into the vacant seat; N joins the waitlist behind everyone (SP1) |
-| A (ineligible) | N enrolls | A is skipped and keeps position 1; N takes the vacant seat (SP2) |
-| A (ineligible), B (eligible) | N enrolls | A is skipped; B is promoted; no seat left, so N is waitlisted: `[A, N]` |
-| *(empty)* | N enrolls | N takes the vacant seat |
+| A (skipped earlier; record since corrected, now eligible) | N enrolls | A is promoted into the vacant seat; N joins the waitlist behind everyone (SP1) |
+| A (still ineligible) | N enrolls | A is skipped and keeps position 1; N takes the vacant seat (SP2) |
+| A (still ineligible), B (skipped earlier; now eligible) | N enrolls | A is skipped; B is promoted; no seat left, so N is waitlisted: `[A, N]` |
+| *(empty)* | N enrolls | N takes the vacant seat (the normal case) |
 
 ## 9. Concurrency and persistence
 - **Persistence:** in-memory only (per scope). State is lost on restart.
@@ -270,7 +244,7 @@ Examples (capacity 2, one seat vacant):
 | 4 | An ineligible learner is not enrolled or promoted; the skip/retain policy is applied **consistently** | C1/C2 → `REJECTED`; C3 → skip and retain. A single promotion routine serves P1 and P2, so the policy is identical everywhere | §2.2, A2, A3, §8 |
 | 5 | Invalid requests and duplicate drops return clear results without corrupting enrollment, capacity or waitlist | `INVALID_REQUEST`, `ALREADY_DROPPED`, `NOT_ENROLLED`, `NOT_WAITLISTED`; no rejection touches seats or the waitlist | §5, inv. 5 |
 | 6 | Tests for capacity available/full, duplicates, FIFO promotion, prerequisite failure, invalid/repeated drops; concurrency where practical | Test plan T1–T13 | §13 |
-| 7 | Record AI prompts, responses, accept/edit/reject decisions, verification | `docs/AI_USAGE.md` (to be updated with the v1.1–v1.5 decisions during development) | — |
+| 7 | Record AI prompts, responses, accept/edit/reject decisions, verification | `docs/AI_USAGE.md` (to be updated with the v1.1–v1.9 design decisions during development) | — |
 
 | Problem statement | Design |
 |-------------------|--------|
@@ -285,9 +259,9 @@ Examples (capacity 2, one seat vacant):
 | One offering's enroll, drop and waitlist-promotion slice only | ✅ Single `CourseOffering`; `leave_waitlist` serves the waitlist slice |
 | No frontend, catalog, payments, identity, multi-term, deployment, new database | ✅ In-memory store; demo CLI only (the "command-line prototype" fallback) |
 | No separate greenfield/brownfield/ambiguous variants | ✅ One implementation |
-| State assumptions; **no configurable policy engine** | ✅ Fixed rules A1–A10; no policy flags or plug-ins |
+| State assumptions; **no configurable policy engine** | ✅ Fixed rules A1–A11; no policy flags or plug-ins |
 | State what happens when an ineligible learner reaches the front | ✅ A3, §2.2 C3, §8.1 example |
-| Prioritise correct capacity/queue behaviour over feature count | ✅ Invariants 1–7 asserted throughout; no extra infrastructure (no event plumbing, no public promotion API) |
+| Prioritise correct capacity/queue behaviour over feature count | ✅ Invariants 1–8 asserted throughout; no extra infrastructure (no event plumbing, no public promotion API) |
 | No credentials or sensitive data in prompts/records | ✅ Fictional learner IDs only |
 | Design spec covers boundary, data/API, invariants, promotion rule, concurrency/persistence, assumptions/tradeoffs | ✅ §2–§10 |
 | Runnable code, focused tests, setup/run instructions, limitations summary | ⏳ Code and README to be updated after sign-off; limitations in §14 |
@@ -308,7 +282,7 @@ Examples (capacity 2, one seat vacant):
 | T10 | Repeated drop → `ALREADY_DROPPED`; drop of a waitlisted, withdrawn or never-enrolled learner → `NOT_ENROLLED`; no extra promotion | 5 |
 | T11 | Malformed or unknown learner IDs on every operation → `INVALID_REQUEST`, no status recorded; invalid construction raises `ValueError` | 5 |
 | T12 | Record changes trigger no promotion on their own; `leave_waitlist` triggers no promotion; a rejected enroll never triggers P2 | 3, 5 |
-| T13 | Concurrency: parallel enrolls never exceed capacity; parallel repeated drops promote once; seeded random sequences check invariants 1–7 after each step | 6 |
+| T13 | Concurrency: parallel enrolls never exceed capacity; parallel duplicate enrolls create one record; parallel repeated drops promote exactly once; mixed parallel drops and enrolls keep invariants; a widened race window proves that removing the lock makes these tests fail. Seeded random sequences check invariants 1–8 after each step | 6 |
 
 ## 14. Limitations and follow-up risks
 - **In-memory, single process.** State is lost on restart, and the lock doesn't protect multiple
