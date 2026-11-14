@@ -360,5 +360,8 @@ The 78 passing tests cover unrelated rules (capacity, FIFO, skip-and-retain, sea
 concurrency), as expected. The defect was then reverted with
 `git checkout course_registration/offering.py`.
 
+**After reverting:** `pytest -q` was re-run and all tests passed again (114 passed), confirming
+the code was restored to its reviewed state.
+
 **Changes made or rejected after review:** _[candidate]_
 
