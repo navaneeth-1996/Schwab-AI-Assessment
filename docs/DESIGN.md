@@ -1,6 +1,6 @@
-# Course Waitlist – Design Specification (v1.7)
+# Course Waitlist – Design Specification (v1.8)
 
-> **Status: v1.7 – all open items resolved; ready for sign-off. Not yet implemented** (the code
+> **Status: v1.8 – all open items resolved; ready for sign-off. Not yet implemented** (the code
 > still implements v1.0).
 >
 > Changes from v1.0:
@@ -31,6 +31,8 @@
 >   only; **no `REJECTED` status is stored** (it adds nothing, because re-enrollment is allowed and
 >   eligibility is re-checked on every attempt). Back to four statuses; every rejection is again a
 >   pure no-op.
+> - **v1.8:** explicit seat-priority rules SP1/SP2 (§8.3) and invariant 8. These clarify existing
+>   behaviour (P2 and T8); no policy change.
 
 ## 1. Scope
 One course offering. Operations: **enroll**, **drop** (enrolled learner), **leave waitlist**
@@ -161,6 +163,9 @@ ineligible.
 6. Enroll on an active learner never changes state (R3).
 7. **Promotion never reorders the waitlist:** learners who remain waiting keep their relative
    FIFO order.
+8. **Seat priority (§8.3):** a newcomer is seated only if, at that moment, no waitlisted learner
+   is eligible (SP1); and a newcomer is never refused a vacant seat merely because ineligible
+   learners are waiting (SP2).
 
 ## 8. Promotion
 
@@ -209,6 +214,31 @@ moments when a seat is (or may be) empty.
 Nothing else triggers promotion. `leave_waitlist` opens no seat, and the service does not
 react to changes in learner records (A11).
 
+### 8.3 Seat priority: waitlist vs. new enrollment requests
+| Rule | Statement | Mechanism |
+|------|-----------|-----------|
+| SP1 | **Existing eligible waitlisted learners always have priority over new enrollment requests.** | P2: before a newcomer is seated, promotion fills every vacant seat it can from the waitlist. The newcomer gets a seat only if one is still vacant afterwards; otherwise they join the back of the waitlist. |
+| SP2 | **Retained ineligible learners never block an eligible newcomer from a vacant seat.** | Promotion skips ineligible learners (C3). If seats are still vacant after the pass, the eligible newcomer takes one immediately, instead of being waitlisted behind learners who can't currently be seated. |
+
+**Why this is FIFO.** A new enrollment request is treated as arriving at the **back** of the
+queue. Filling a vacant seat is then one FIFO scan, applied the same way everywhere:
+
+```
+candidates = waitlist (front → back) + [newcomer]
+seat the first eligible candidate(s), skipping (and retaining) ineligible waitlisted learners
+```
+
+Eligible waitlisted learners are always ahead of the newcomer (SP1). Ineligible ones are skipped
+exactly as they are on a drop (SP2). The newcomer, if not seated, takes the last FIFO slot.
+
+Examples (capacity 2, one seat vacant):
+| Waitlist | Newcomer N (eligible) | Result |
+|----------|-----------------------|--------|
+| A (eligible) | N enrolls | A is promoted into the vacant seat; N joins the waitlist behind everyone (SP1) |
+| A (ineligible) | N enrolls | A is skipped and keeps position 1; N takes the vacant seat (SP2) |
+| A (ineligible), B (eligible) | N enrolls | A is skipped; B is promoted; no seat left, so N is waitlisted: `[A, N]` |
+| *(empty)* | N enrolls | N takes the vacant seat |
+
 ## 9. Concurrency and persistence
 - **Persistence:** in-memory only (per scope). State is lost on restart.
 - **Concurrency:** one `threading.Lock` per `CourseOffering`. Every public method, and any
@@ -234,7 +264,7 @@ react to changes in learner records (A11).
 ## 11. Acceptance-criteria traceability
 | AC | Requirement (from the assessment) | How the design satisfies it | Section |
 |----|-----------------------------------|------------------------------|---------|
-| 1 | Enrollment succeeds when capacity remains and the prerequisite is met | Check C1; a seat is assigned only if one is still free after P2 | §2.2, §8.2 |
+| 1 | Enrollment succeeds when capacity remains and the prerequisite is met | Check C1; a seat is assigned if one is still vacant after P2 (SP1). Ineligible waitlisted learners never block it (SP2) | §2.2, §8.2 |
 | 2 | When full, an eligible learner joins the waitlist **once**; duplicate requests create no duplicate records | Check C2; one status per learner; R1–R3; duplicate check precedes the prerequisite check | §2.1, §3, inv. 2, 6 |
 | 3 | Drop opens a seat and promotes the earliest **eligible** waitlisted learner per the documented policy | P1 after every successful drop; FIFO scan promotes the first eligible learner(s) | §8 |
 | 4 | An ineligible learner is not enrolled or promoted; the skip/retain policy is applied **consistently** | C1/C2 → `REJECTED`; C3 → skip and retain. A single promotion routine serves P1 and P2, so the policy is identical everywhere | §2.2, A2, A3, §8 |
@@ -272,7 +302,8 @@ react to changes in learner records (A11).
 | T5 | Drop promotes the earliest eligible learner; successive drops follow FIFO | 3 |
 | T6 | Skip and retain: an ineligible head is skipped, the next eligible learner is promoted, and the skipped learner keeps position 1 | 3, 4 |
 | T7 | A retained learner's record is corrected (safeguard path): (a) while full → promoted at the next drop, ahead of later joiners; (b) while a seat is empty → **not** promoted immediately; promoted when the next eligible newcomer enrolls (P2), and the newcomer is waitlisted behind them | 3, 4 |
-| T8 | Only ineligible learners waiting → seat stays empty; an eligible newcomer gets it directly | 1, 4 |
+| T8 | **SP2:** only ineligible learners waiting → seat stays vacant after the drop; an eligible newcomer takes it directly, and the ineligible learners keep their positions | 1, 4 |
+| T8b | **SP1:** a vacant seat with an eligible learner waiting (record corrected after being skipped) → a newcomer's enroll promotes the waiting learner first, and the newcomer is waitlisted at the back. Also: the mixed case `[A ineligible, B eligible]` + newcomer → B seated, waitlist `[A, N]` | 1, 3, 4 |
 | T9 | Re-enroll after drop or withdraw: seat if free, back of queue if full, `REJECTED` (state unchanged) if not eligible; repeated cycles never duplicate | 2 |
 | T10 | Repeated drop → `ALREADY_DROPPED`; drop of a waitlisted, withdrawn or never-enrolled learner → `NOT_ENROLLED`; no extra promotion | 5 |
 | T11 | Malformed or unknown learner IDs on every operation → `INVALID_REQUEST`, no status recorded; invalid construction raises `ValueError` | 5 |
